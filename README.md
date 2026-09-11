@@ -5,7 +5,7 @@ It provides a single `molstar_style` command, local scientific inputs, interacti
 OpenGL drawing, and native ray interoperability. Node.js, Mol*, CueMol, and network
 services are not runtime dependencies.
 
-[English guide](docs/guide.md) · [日本語ガイド](docs/ja/guide.md) · [Coverage and differences](docs/coverage.md)
+[English guide](docs/guide.md) · [日本語ガイド](docs/ja/guide.md) · [Coverage and differences](docs/coverage.md) · [Gallery](docs/gallery.md)
 
 ```text
 molstar_style
@@ -17,6 +17,43 @@ molstar_style interactions, selection=protein or ligand, name=contacts
 molstar_style ray, filename=figure.png, width=1600, height=1200
 molstar_style reset, name=all
 ```
+
+## Gallery
+
+[All 82 examples, with GPU and ray comparison](docs/gallery.md).
+
+These previews show the interactive GPU renderer at `quality=high`. Protein
+views use crambin (PDB 1CRN); other specimens and synthetic inputs are identified
+in the full gallery. Click a preview for its 1200 x 900 image.
+
+<table>
+  <tr>
+    <td width="33%" align="center"><a href="https://github.com/th2ch-g/molstar_style_in_pymol/releases/download/gallery/cartoon-gpu.png"><img src="https://github.com/th2ch-g/molstar_style_in_pymol/releases/download/gallery/cartoon-gpu-thumb.png" alt="cartoon, GPU" width="260"></a><br><code>cartoon</code></td>
+    <td width="33%" align="center"><a href="https://github.com/th2ch-g/molstar_style_in_pymol/releases/download/gallery/nucleic-gpu.png"><img src="https://github.com/th2ch-g/molstar_style_in_pymol/releases/download/gallery/nucleic-gpu-thumb.png" alt="nucleic, GPU" width="260"></a><br><code>nucleic</code></td>
+    <td width="33%" align="center"><a href="https://github.com/th2ch-g/molstar_style_in_pymol/releases/download/gallery/ball-and-stick-gpu.png"><img src="https://github.com/th2ch-g/molstar_style_in_pymol/releases/download/gallery/ball-and-stick-gpu-thumb.png" alt="ball-and-stick, GPU" width="260"></a><br><code>ball-and-stick</code></td>
+  </tr>
+  <tr>
+    <td width="33%" align="center"><a href="https://github.com/th2ch-g/molstar_style_in_pymol/releases/download/gallery/carbohydrate-gpu.png"><img src="https://github.com/th2ch-g/molstar_style_in_pymol/releases/download/gallery/carbohydrate-gpu-thumb.png" alt="carbohydrate, GPU" width="260"></a><br><code>carbohydrate</code></td>
+    <td width="33%" align="center"><a href="https://github.com/th2ch-g/molstar_style_in_pymol/releases/download/gallery/molecular-surface-gpu.png"><img src="https://github.com/th2ch-g/molstar_style_in_pymol/releases/download/gallery/molecular-surface-gpu-thumb.png" alt="molecular-surface, GPU" width="260"></a><br><code>molecular-surface</code></td>
+    <td width="33%" align="center"><a href="https://github.com/th2ch-g/molstar_style_in_pymol/releases/download/gallery/direct-volume-gpu.png"><img src="https://github.com/th2ch-g/molstar_style_in_pymol/releases/download/gallery/direct-volume-gpu-thumb.png" alt="direct-volume, GPU" width="260"></a><br><code>direct-volume</code></td>
+  </tr>
+  <tr>
+    <td width="33%" align="center"><a href="https://github.com/th2ch-g/molstar_style_in_pymol/releases/download/gallery/particle-fibers-gpu.png"><img src="https://github.com/th2ch-g/molstar_style_in_pymol/releases/download/gallery/particle-fibers-gpu-thumb.png" alt="particle-fibers, GPU" width="260"></a><br><code>particle-fibers</code></td>
+    <td width="33%" align="center"><a href="https://github.com/th2ch-g/molstar_style_in_pymol/releases/download/gallery/interactions-gpu.png"><img src="https://github.com/th2ch-g/molstar_style_in_pymol/releases/download/gallery/interactions-gpu-thumb.png" alt="interactions, GPU" width="260"></a><br><code>interactions</code></td>
+    <td width="33%" align="center"><a href="https://github.com/th2ch-g/molstar_style_in_pymol/releases/download/gallery/orbital-gpu.png"><img src="https://github.com/th2ch-g/molstar_style_in_pymol/releases/download/gallery/orbital-gpu-thumb.png" alt="orbital, GPU" width="260"></a><br><code>orbital</code></td>
+  </tr>
+  <tr>
+    <td width="33%" align="center"><a href="https://github.com/th2ch-g/molstar_style_in_pymol/releases/download/gallery/metallic-gpu.png"><img src="https://github.com/th2ch-g/molstar_style_in_pymol/releases/download/gallery/metallic-gpu-thumb.png" alt="metallic, GPU" width="260"></a><br><code>metallic</code></td>
+    <td width="33%" align="center"><a href="https://github.com/th2ch-g/molstar_style_in_pymol/releases/download/gallery/outline-gpu.png"><img src="https://github.com/th2ch-g/molstar_style_in_pymol/releases/download/gallery/outline-gpu-thumb.png" alt="outline, GPU" width="260"></a><br><code>outline</code></td>
+    <td width="33%" align="center"><a href="https://github.com/th2ch-g/molstar_style_in_pymol/releases/download/gallery/illustrative-gpu.png"><img src="https://github.com/th2ch-g/molstar_style_in_pymol/releases/download/gallery/illustrative-gpu-thumb.png" alt="illustrative, GPU" width="260"></a><br><code>illustrative</code></td>
+  </tr>
+</table>
+
+Generated images are stored as release assets and remain ignored in Git.
+The [rendering script](scripts/render_gallery.py) and
+[regeneration instructions](docs/gallery.md#regenerate) are included.
+
+## Install
 
 Install into the Python environment used by PyMOL:
 

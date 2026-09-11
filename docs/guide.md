@@ -1,6 +1,6 @@
 # Mol*-inspired visualization in PyMOL
 
-[日本語](ja/guide.md) · [Coverage](coverage.md)
+[日本語](ja/guide.md) · [Coverage](coverage.md) · [GPU/ray gallery](gallery.md)
 
 `molstar_style style, selection=all` applies a named managed view. The default
 is `polymer-and-ligand`: polymer cartoon, ligand/ion sticks and spheres, water

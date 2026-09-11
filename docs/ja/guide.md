@@ -1,6 +1,6 @@
 # PyMOL で使う Mol* 風表示
 
-[English](../guide.md) · [対応表と差分](../coverage.md)
+[English](../guide.md) · [対応表と差分](../coverage.md) · [GPU/ray ギャラリー](../gallery.md)
 
 `molstar_style` は独立した Python 実装です。Mol* の参照版は
 `5b1b54ed03b03936041f514b33b8bb129b774d37`。Node.js、Mol*、CueMol、外部サーバーは不要です。

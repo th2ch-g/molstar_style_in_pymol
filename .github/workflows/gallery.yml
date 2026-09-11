@@ -1,0 +1,76 @@
+name: Publish visualization gallery
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/gallery.yml
+      - scripts/render_gallery.py
+      - tests/samples.py
+      - src/**
+      - pyproject.toml
+      - pixi.lock
+
+concurrency:
+  group: visualization-gallery
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  gallery:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      LIBGL_ALWAYS_SOFTWARE: "1"
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: prefix-dev/setup-pixi@5185adfbffb4bd703da3010310260805d89ebb11 # v0.9.6
+        with:
+          locked: true
+          manifest-path: pyproject.toml
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+      - name: Install offscreen OpenGL support
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y xvfb xauth libgl1 libegl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0
+      - name: Obtain the public, pinned gallery specimen
+        run: |
+          mkdir -p .cache/gallery
+          curl --fail --location --retry 3 \
+            https://raw.githubusercontent.com/molstar/molstar/5b1b54ed03b03936041f514b33b8bb129b774d37/examples/1crn.cif \
+            --output .cache/gallery/1crn.cif
+      - name: Render and validate GPU and ray images
+        run: |
+          xvfb-run -a -s "-screen 0 1600x1200x24" \
+            uv run --no-project --python .pixi/envs/default/bin/python python \
+            scripts/render_gallery.py --structure .cache/gallery/1crn.cif
+      - name: Publish generated images outside Git history
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          cat > .cache/gallery/release.md <<EOF
+          Documentation images rendered from commit ${GITHUB_SHA}.
+
+          Each style has GPU and native ray PNGs at 1200 x 900, plus thumbnails.
+          The manifest records the source revision, input checksum, and image checksums.
+          These are documentation assets, not a package version.
+
+          See [the gallery](https://github.com/${GITHUB_REPOSITORY}/blob/main/docs/gallery.md) for commands, specimens, and limitations.
+          EOF
+          if ! gh release view gallery --json id >/dev/null 2>&1; then
+            gh release create gallery --target "$GITHUB_SHA" --draft --prerelease \
+              --latest=false --title "Visualization gallery" \
+              --notes-file .cache/gallery/release.md
+          fi
+          gh release upload gallery docs/gallery/*.png docs/gallery/manifest.json --clobber
+          gh release edit gallery --draft=false --prerelease --latest=false \
+            --notes-file .cache/gallery/release.md
