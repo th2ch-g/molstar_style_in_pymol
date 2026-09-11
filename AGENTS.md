@@ -6,7 +6,8 @@
 - Read docs/guide.md before changing the command interface or renderer.
 - Preserve source atoms and unrelated views; never patch PyMOL commands.
 - Validate real GPU and ray output in a separate PyMOL process.
-- Keep caches, environments, downloaded inputs, and generated galleries ignored.
+- Keep caches, environments, downloaded inputs, and temporary renders ignored.
+- Version published gallery PNGs in docs/gallery; render them locally, without CI.
 - Maintain English and Japanese guides together. Keep paths portable.
 - Scope searches to relevant files. Preserve third-party attribution in NOTICE.
 - Append a blank line and Co-authored-by: Codex <noreply@openai.com> to commits.

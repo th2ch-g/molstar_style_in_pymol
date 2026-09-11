@@ -4,7 +4,6 @@ import argparse
 import hashlib
 import json
 import subprocess
-import sys
 from pathlib import Path
 from time import monotonic, sleep
 
@@ -12,7 +11,6 @@ import numpy as np
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tests"))
 
 from molstar_style_in_pymol import molstar_style  # noqa: E402
 from molstar_style_in_pymol.controller import manager_for  # noqa: E402
@@ -133,9 +131,6 @@ def validate_image(path, width, height):
         canvas.paste(image, ((width - image.width) // 2, (height - image.height) // 2))
         image = canvas
     image.save(path, optimize=True)
-    image.thumbnail((400, 300), Image.Resampling.LANCZOS)
-    thumb = path.with_stem(path.stem + "-thumb")
-    image.save(thumb, optimize=True)
     return {
         "visible_pixels": visible,
         "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
@@ -148,6 +143,9 @@ def main():
         "--structure", type=Path, required=True, help="Local 1CRN CIF or PDB"
     )
     parser.add_argument("--output", type=Path, default=Path("docs/gallery"))
+    parser.add_argument(
+        "--manifest", type=Path, default=Path(".cache/gallery/manifest.json")
+    )
     parser.add_argument("--only", nargs="+")
     parser.add_argument("--width", type=int, default=1200)
     parser.add_argument("--height", type=int, default=900)
@@ -264,7 +262,8 @@ def main():
         cmd.delete("all")
         window.hide()
         pump()
-    (args.output / "manifest.json").write_text(json.dumps(report, indent=2) + "\n")
+    args.manifest.parent.mkdir(parents=True, exist_ok=True)
+    args.manifest.write_text(json.dumps(report, indent=2) + "\n")
     print(
         f"Validated {len(report['images'])} GPU/ray pairs in {args.output}", flush=True
     )
