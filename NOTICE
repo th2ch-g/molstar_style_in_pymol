@@ -1,0 +1,29 @@
+Mol*-inspired algorithms, numerical defaults, palettes, and terminology refer to
+Mol* revision 5b1b54ed03b03936041f514b33b8bb129b774d37.
+Copyright (c) 2018-2026 Mol* contributors. Licensed under the MIT license.
+https://github.com/molstar/molstar
+
+ColorBrewer palette data: Copyright (c) 2002 Cynthia Brewer, Mark Harrower,
+and The Pennsylvania State University. Apache License 2.0; see LICENSE.colorbrewer.
+
+Mesh primitives, molecular snapshots, and Qt picking infrastructure are adapted
+from cuemol_style_in_pymol, copyright (c) 2026 th2ch-g, under the MIT license.
+https://github.com/th2ch-g/cuemol_style_in_pymol
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
