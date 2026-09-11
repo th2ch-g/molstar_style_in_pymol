@@ -54,14 +54,20 @@ def draw_volumes(pool, drawing):
                 gl.glTexImage3D(
                     gl.GL_TEXTURE_3D,
                     0,
-                    0x8818,  # GL_LUMINANCE32F_ARB, available with ARB_texture_float.
+                    0x8814
+                    if volume.color_grid is not None
+                    else 0x8818,  # RGBA32F / LUMINANCE32F.
                     *grid.values.shape,
                     0,
-                    gl.GL_LUMINANCE,
+                    gl.GL_RGBA if volume.color_grid is not None else gl.GL_LUMINANCE,
                     gl.GL_FLOAT,
                     volume.pixels,
                 )
             gl.glUniform1i(gl.glGetUniformLocation(program, "field"), 0)
+            gl.glUniform1i(
+                gl.glGetUniformLocation(program, "fieldColor"),
+                int(volume.color_grid is not None),
+            )
             gl.glActiveTexture(gl.GL_TEXTURE1)
             gl.glBindTexture(gl.GL_TEXTURE_1D, handles[1])
             lo, hi = volume.transfer[0, 0], volume.transfer[-1, 0]

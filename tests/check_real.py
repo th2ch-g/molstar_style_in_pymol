@@ -224,7 +224,7 @@ def main():
         json.dumps({"passed": report, "failed": failed}, indent=2) + "\n"
     )
     if args.gui:
-        window.close()
+        window.hide()
         pump()
     else:
         instance.stop()

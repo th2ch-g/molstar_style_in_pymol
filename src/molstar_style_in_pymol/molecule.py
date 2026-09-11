@@ -34,22 +34,32 @@ def ellipsoid(center, axes, radii, color, owner, detail):
     transform = np.diag(np.maximum(radii, 1e-4)) @ axes
     m.vertices = (m.vertices @ transform + center).astype(np.float32)
     m.normals = unit(m.normals @ np.linalg.inv(transform).T).astype(np.float32)
+    if np.linalg.det(transform) < 0:
+        m.faces = m.faces[:, ::-1].copy()
     return m
 
 
 def axes_of(points):
     center = points.mean(axis=0)
     _, _, axes = np.linalg.svd(points - center, full_matrices=True)
-    extent = np.maximum(np.max(np.abs((points - center) @ axes.T), axis=0), 0.2)
     if np.linalg.det(axes) < 0:
         axes[-1] *= -1
+    projected = (points - center) @ axes.T
+    lo, hi = projected.min(axis=0), projected.max(axis=0)
+    center = center + (lo + hi) / 2 @ axes
+    extent = np.maximum((hi - lo) / 2, 0.2)
     return center, axes, extent
 
 
 def atomic(state, representation, c, r, p, quality):
     detail = QUALITIES[quality][1]
     factor = float(
-        p.get("sizeFactor", 1 if representation in ("spacefill", "ellipsoid") else 0.15)
+        p.get(
+            "sizeFactor",
+            {"spacefill": 1, "ellipsoid": 1, "point": 1, "line": 2}.get(
+                representation, 0.15
+            ),
+        )
     )
     if not np.isfinite(factor) or factor <= 0:
         raise ValueError("sizeFactor must be positive")
@@ -59,7 +69,42 @@ def atomic(state, representation, c, r, p, quality):
             for a in state.atoms
         ]
     )
-    visuals = [v.removeprefix("structure-") for v in p.get("visuals", [])]
+    if p.get("traceOnly", False):
+        visible &= np.array(
+            [
+                a.name == "CA"
+                if a.kind == "protein"
+                else a.name in ("C4'", "P")
+                if a.kind == "nucleic"
+                else False
+                for a in state.atoms
+            ]
+        )
+    stride = int(p.get("stride", 1))
+    if stride < 1:
+        raise ValueError("stride must be positive")
+    if representation == "point":
+        visible &= np.arange(len(state.atoms)) % stride == 0
+    defaults = {
+        "line": ["intra-bond", "inter-bond", "element-point", "element-cross"],
+        "point": ["element-point"],
+        "ellipsoid": ["ellipsoid-mesh", "intra-bond", "inter-bond"],
+        "ball-and-stick": ["element-sphere", "intra-bond", "inter-bond"],
+        "spacefill": ["element-sphere"],
+    }
+    visuals = [
+        v.removeprefix("structure-")
+        for v in p.get("visuals", defaults.get(representation, []))
+    ]
+    if representation == "ellipsoid" and not any(
+        len(a.aniso) == 6 and any(a.aniso) for a in state.atoms
+    ):
+        raise ValueError("Ellipsoid requires anisotropic displacement tensors")
+    bonded = {i for bond in state.bonds for i in bond}
+    neighbors = {i: [] for i in bonded}
+    for i, j in state.bonds:
+        neighbors[i].append(j)
+        neighbors[j].append(i)
     pieces = []
     draw_atoms = (
         representation not in ("line", "polyhedron") or p.get("pointStyle") == "circle"
@@ -80,32 +125,42 @@ def atomic(state, representation, c, r, p, quality):
             if not visible[i]:
                 continue
             radius = r[i] * factor
-            if "element-cross" in visuals:
+            if "element-cross" in visuals and (
+                p.get("crosses", "lone") == "all" or i not in bonded
+            ):
+                half_cross = float(p.get("crossSize", 0.35)) / 2
                 for axis in np.eye(3):
                     pieces.append(
                         cylinder(
-                            pos - axis * factor, pos + axis * factor, 0.025, c[i], i, 6
+                            pos - axis * half_cross,
+                            pos + axis * half_cross,
+                            r[i] * factor * 0.02,
+                            c[i],
+                            i,
+                            6,
                         )
                     )
-            elif representation == "ellipsoid" and len(a.aniso) == 6 and any(a.aniso):
+            if representation == "ellipsoid":
+                if len(a.aniso) != 6 or not any(a.aniso):
+                    continue
                 u11, u22, u33, u12, u13, u23 = a.aniso
                 values, axes = np.linalg.eigh(
                     [[u11, u12, u13], [u12, u22, u23], [u13, u23, u33]]
                 )
-                if np.any(values <= 0):
-                    raise ValueError(
-                        f"Nonpositive anisotropic tensor at atom {a.index}"
-                    )
-                from scipy.stats import chi2
+                # Match the pinned Mol* multiplier; an explicit probability is an extension.
+                multiplier = 1.5958
+                if "probability" in p:
+                    from scipy.stats import chi2
 
-                probability = float(p.get("probability", 0.5))
-                if not 0 < probability < 1:
-                    raise ValueError("probability must be between zero and one")
+                    probability = float(p["probability"])
+                    if not 0 < probability < 1:
+                        raise ValueError("probability must be between zero and one")
+                    multiplier = np.sqrt(chi2.ppf(probability, 3))
                 pieces.append(
                     ellipsoid(
                         pos,
                         axes.T,
-                        np.sqrt(values * chi2.ppf(probability, 3)) * factor,
+                        np.sqrt(np.abs(values)) * multiplier * factor,
                         c[i],
                         i,
                         detail,
@@ -113,11 +168,11 @@ def atomic(state, representation, c, r, p, quality):
                 )
             elif representation == "polyhedron":
                 pass
-            else:
+            elif "element-point" in visuals or "element-sphere" in visuals:
                 pieces.append(
                     sphere(
                         pos,
-                        radius if representation != "point" else factor,
+                        radius * 0.075 if "element-point" in visuals else radius,
                         c[i],
                         i,
                         detail,
@@ -158,25 +213,62 @@ def atomic(state, representation, c, r, p, quality):
                 continue
             a, b = state.coords[i], state.coords[j]
             radius = (
-                float(p.get("lineSizeAttenuation", 0.04))
+                min(r[i], r[j]) * factor * 0.02
                 if representation == "line"
-                else min(r[i], r[j]) * factor * float(p.get("sizeAspectRatio", 2 / 3))
+                else min(r[i], r[j])
+                * factor
+                * float(
+                    p.get(
+                        "sizeAspectRatio",
+                        0.1 if representation == "ellipsoid" else 2 / 3,
+                    )
+                )
             )
             order = int(getattr(state.model.bond[k], "order", 1))
-            multiple = p.get("multipleBonds", "symmetric")
+            multiple = p.get(
+                "multipleBonds", "offset" if representation == "line" else "symmetric"
+            )
             count = order if order in (2, 3) and multiple != "off" else 1
             normal = unit(
                 np.cross(
                     unit(b - a), [1, 0, 0] if abs(unit(b - a)[0]) < 0.8 else [0, 1, 0]
                 )
             )
+            for neighbor in neighbors.get(i, []) + neighbors.get(j, []):
+                if neighbor in (i, j) or state.atoms[neighbor].element.upper() in (
+                    "H",
+                    "D",
+                ):
+                    continue
+                reference = state.coords[neighbor] - a
+                projected = reference - unit(b - a) * np.dot(reference, unit(b - a))
+                if np.linalg.norm(projected) > 1e-6:
+                    normal = unit(projected)
+                    break
+            link_scale = float(
+                p.get("linkScale", 0.5 if representation == "line" else 0.45)
+            )
+            spacing = float(
+                p.get("linkSpacing", 0.1 if representation == "line" else 1)
+            )
+            multi_radius = radius * link_scale / (0.5 * count)
             for v in range(count):
-                offset = (
-                    normal
-                    * (v if multiple == "offset" else v - (count - 1) / 2)
-                    * radius
-                    * 2.6
-                )
+                if count == 1:
+                    shift, bond_radius = 0, radius
+                elif multiple == "offset":
+                    shift = (0, 1, -1)[v] * (
+                        radius + multi_radius + link_scale * radius * spacing
+                    )
+                    bond_radius = radius if v == 0 else multi_radius
+                else:
+                    shift = (
+                        (v - (count - 1) / 2)
+                        * (2 if count == 2 else 1)
+                        * (radius - multi_radius)
+                        * spacing
+                    )
+                    bond_radius = multi_radius
+                offset = normal * shift
                 mid = (a + b) / 2 + offset
                 for start, end, color, owner in (
                     (a + offset, mid, c[i], i),
@@ -186,26 +278,33 @@ def atomic(state, representation, c, r, p, quality):
                         cylinder(
                             start,
                             end,
-                            radius if count == 1 else radius * 0.65,
+                            bond_radius,
                             color,
                             owner,
                             detail,
                         )
                     )
             if order == 4 and p.get("aromaticBonds", True):
+                aromatic_scale = float(p.get("aromaticScale", 0.3))
+                offset = (
+                    normal
+                    * radius
+                    * (1 + aromatic_scale * (1 + float(p.get("aromaticSpacing", 1.5))))
+                )
                 pieces.append(
                     dashed(
-                        a + normal * radius * 2,
-                        b + normal * radius * 2,
-                        radius * 0.45,
+                        a + offset,
+                        b + offset,
+                        radius * aromatic_scale,
                         c[i],
                         i,
+                        count=int(p.get("aromaticDashCount", 2)),
                     )
                 )
     return merge(pieces)
 
 
-def polymer(state, representation, c, p, quality):
+def polymer(state, representation, c, r, p, quality):
     linear, radial = QUALITIES[quality]
     linear = int(p.get("linearSegments", linear))
     radial = int(p.get("radialSegments", radial))
@@ -256,11 +355,21 @@ def polymer(state, representation, c, p, quality):
     visuals = p.get(
         "visuals",
         defaults.get(
-            representation, ["polymer-trace", "polymer-gap", "nucleotide-ring"]
+            representation,
+            [
+                "polymer-trace",
+                "polymer-gap",
+                "nucleotide-ring",
+                "nucleotide-atomic-ring-fill",
+                "nucleotide-atomic-bond",
+                "nucleotide-atomic-element",
+            ],
         ),
     )
     group_lookup = {i: g for g in groups for i in g}
-    size = float(p.get("sizeFactor", 0.2))
+    size = float(p.get("sizeFactor", 0.3 if representation == "backbone" else 0.2))
+    if not np.isfinite(size) or size <= 0:
+        raise ValueError("sizeFactor must be positive")
     for ids in (
         chunks
         if any(
@@ -275,7 +384,11 @@ def polymer(state, representation, c, p, quality):
         else []
     ):
         if len(ids) == 1:
-            result.append(sphere(state.coords[ids[0]], size, c[ids[0]], ids[0], radial))
+            result.append(
+                sphere(
+                    state.coords[ids[0]], size * r[ids[0]], c[ids[0]], ids[0], radial
+                )
+            )
             continue
         points = state.coords[ids]
         if representation == "backbone":
@@ -287,13 +400,13 @@ def polymer(state, representation, c, p, quality):
                 middle = (state.coords[i] + state.coords[j]) / 2
                 result.extend(
                     [
-                        cylinder(state.coords[i], middle, size, c[i], i, radial),
-                        cylinder(middle, state.coords[j], size, c[j], j, radial),
+                        cylinder(state.coords[i], middle, size * r[i], c[i], i, radial),
+                        cylinder(middle, state.coords[j], size * r[j], c[j], j, radial),
                     ]
                 )
             if "polymer-backbone-sphere" in visuals:
                 result.extend(
-                    sphere(state.coords[i], size, c[i], i, radial) for i in ids
+                    sphere(state.coords[i], size * r[i], c[i], i, radial) for i in ids
                 )
             continue
         t = np.arange(len(ids))
@@ -303,17 +416,19 @@ def polymer(state, representation, c, p, quality):
         owner = np.array(ids)[
             np.clip(np.floor(samples + 0.5).astype(int), 0, len(ids) - 1)
         ]
-        widths = np.full(len(xyz), size)
+        widths = size * np.interp(samples, t, r[ids])
         thickness = widths.copy()
         hints = np.zeros_like(xyz)
         for k, i in enumerate(owner):
             a = state.atoms[i]
-            if representation == "putty":
+            if representation == "putty" and "bfactorScale" in p:
                 widths[k] = thickness[k] = size * max(
                     0.25, np.sqrt(max(a.bfactor, 0) / float(p.get("bfactorScale", 25)))
                 )
-            elif a.ss in ("H", "S") or a.kind == "nucleic":
-                widths[k] = size * float(p.get("aspectRatio", 5))
+            elif representation != "putty" and (
+                a.ss in ("H", "S") or a.kind == "nucleic"
+            ):
+                widths[k] *= float(p.get("aspectRatio", 5))
                 if a.ss == "H" and p.get("tubularHelices", False):
                     thickness[k] = widths[k] * 1.5
                     widths[k] = thickness[k]
@@ -349,7 +464,9 @@ def polymer(state, representation, c, p, quality):
             dashed(state.coords[i], state.coords[j], size * 0.7, c[i], i)
             for i, j in gaps
         )
-    for group, names in nucleotide:
+    for group, names in (
+        nucleotide if any(v.startswith("nucleotide-") for v in visuals) else []
+    ):
         ids = [
             names[n]
             for n in ("N9", "C8", "N7", "C5", "C6", "N1", "C2", "N3", "C4")
@@ -486,27 +603,44 @@ def geometry(state, representation, mode, p, data, quality):
     c = colors(
         state.atoms, state.coords, mode, representation, p.get("colorParams", {}), data
     )
-    theme = p.get("sizeTheme", "physical")
+    theme = p.get(
+        "sizeTheme",
+        "uncertainty"
+        if representation == "putty"
+        else "uniform"
+        if representation
+        in ("ellipsoid", "cartoon", "backbone", "point", "line", "orientation")
+        else "physical",
+    )
     r = sizes(state.atoms, theme, p.get("sizeParams", {}), data)
     result = Geometry()
     if representation in ("cartoon", "backbone", "putty"):
-        return result.add(polymer(state, representation, c, p, quality), state.atoms)
+        return result.add(polymer(state, representation, c, r, p, quality), state.atoms)
     if representation == "carbohydrate":
         from .carbohydrate import geometry
 
-        return geometry(state, p, quality)
+        return geometry(state, p, quality, c if mode != "auto" else None)
     if representation in ("molecular-surface", "gaussian-surface", "gaussian-volume"):
         from .scene import Volume
         from .volume import isosurface, molecular_grid, transfer_function, wireframe
 
         grid, level = molecular_grid(state.coords, r, representation, p, quality)
         if representation == "gaussian-volume":
+            color_grid = np.empty((*grid.values.shape, 3), np.float32)
+            tree = cKDTree(state.coords)
+            yz = np.indices(grid.values.shape[1:]).reshape(2, -1).T
+            for x in range(grid.values.shape[0]):
+                points = grid.world(np.c_[np.full(len(yz), x), yz])
+                color_grid[x] = c[tree.query(points)[1]].reshape(
+                    *grid.values.shape[1:], 3
+                )
             result.volumes.append(
                 Volume(
                     grid,
                     transfer_function(grid, p),
                     float(p.get("alpha", 1)),
                     min(grid.spacing),
+                    color_grid=color_grid,
                 )
             )
         else:
@@ -529,19 +663,14 @@ def geometry(state, representation, mode, p, data, quality):
         if any("wireframe" in v for v in visuals):
             result.add(wireframe(m), state.atoms)
         return result
-    if representation in ("orientation", "plane"):
+    if representation == "plane":
+        from .structure_plane import plane
+
+        return result.add(plane(state, c, r, p), state.atoms, True)
+    if representation == "orientation":
         center, axes, extent = axes_of(state.coords)
-        if representation == "plane":
-            verts = (
-                center
-                + np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]])
-                * (extent[:2] + float(p.get("margin", 0)))
-                @ axes[:2]
-            )
-            return result.add(
-                indexed(verts, [[0, 1, 2], [0, 2, 3]], c[0], 0), state.atoms
-            )
-        visuals = p.get("visuals", ["axes", "box", "ellipsoid"])
+        extent *= float(p.get("sizeFactor", 1))
+        visuals = p.get("visuals", ["orientation-ellipsoid-mesh"])
         if "ellipsoid" in visuals or "orientation-ellipsoid-mesh" in visuals:
             result.add(
                 ellipsoid(center, axes, extent, c[0], 0, QUALITIES[quality][1]),

@@ -23,7 +23,8 @@ void main() {
         float a = float(i) * 6.2831853 / 12.0;
         vec2 delta = vec2(cos(a), sin(a)) * pixel;
         float d = texture2D(depth, uv + delta*3.0).r;
-        ao += d < z-0.00008 && d > z-0.025 ? 1.0 : 0.0;
+        float difference=z-d;
+        ao += smoothstep(0.00008,0.002,difference)*(1.0-smoothstep(0.01,0.025,difference));
         edge += abs(d-z) > 0.003 ? 1.0 : 0.0;
         vec4 sampleColor = texture2D(image, uv + delta*max(1.0, abs(z-focus)*dof*200.0));
         blur += sampleColor;

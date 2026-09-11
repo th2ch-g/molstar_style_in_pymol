@@ -66,6 +66,29 @@ molstar_style('cartoon', params={
 色は `colorParams`、サイズは `sizeTheme` と `sizeParams` で設定します。
 `clipPlanes` は最大6個の `[nx, ny, nz, offset]` を受け取り、内積と offset の和が非負の部分を残します。
 
+楕円体は異方性変位テンソル（Å²）が必須です。未定義の原子は省略し、全原子で未定義ならエラーにします。
+既定の半軸長は参照 Mol* と同じ `1.5958 * sqrt(abs(固有値)) * sizeFactor` です。
+この定数は厳密な50%確率の係数とは異なります。`probability` を明示した場合のみ3次元χ²分布の分位点を使います。
+等しい固有値ではテンソル由来の球になります。結合半径は既定で0.1 Åです。
+
+backbone の既定半径は0.3 Å、cartoon はアスペクト比適用前で0.2 Åです。
+putty は既定で `0.2 * (0.2 + 0.1 * B)` Åを使い、`sizeTheme` も反映します。
+旧平方根式は `bfactorScale` を明示した場合のみ使います。
+構造の orientation は楕円体、shape-orientation は配向ボックスが既定です。
+それぞれ `sizeFactor` / `scaleFactor` で大きさを変えられます。
+
+構造の `plane` は原子を色分けした断面です。`imageResolution`、`axis=a/b/c`、`offset`、`margin`、
+`cutout`、または `mode=plane` と `plane={point: [...], normal: [...]}` で指定します。
+単純な当てはめ平面は `shape-plane` です。ボリュームの `slice` は格子の x/y/z 軸に対応し、既定は x 軸の中央です。
+uniform 色では密度で明度を変え、`isoValue` より小さい値を透過させます。斜め断面・周期写像は未対応です。
+
+線・点はワールド座標での近似です。線半径は `0.02 * sizeFactor * size`、点半径は `0.075 * sizeFactor * size` Åです。
+線の既定 sizeFactor は2、点は1です。attenuation の真偽値を半径には使いません。
+画面ピクセル寸法・カメラ距離による減衰・全ての上流結合フィルターは未実装です。
+測定の `arcScale` は短い方の腕に対する割合で、角度・二面角は既定で扇形を描きます。
+volume dot の既定半径は1 Åです。負の等値面では閾値以下の点を選びます。
+Gaussian volume の分子色は GPU と ray の両方に反映します。
+
 ## ローカル入力
 
 CCP4/MRC、Cube、OpenDX、NPZ、CIF/BCIF、JSON、MVS JSON、G3D、Kinemage を読み込みます。
@@ -90,7 +113,8 @@ mmCIF/BCIF の Model Archive 品質指標・entity 情報は自動対応付け�
 | 任意ラベル | `text`、`positions`。位置省略時は選択の中心 |
 | メッシュ | `vertices`、三角形 `faces`、任意の `colors`・`opacity`・`transform` |
 | 粒子 | `particles` の各行に `position`・`radius`。姿勢は XYZW の `quaternion` または `axes` |
-| 繊維・標的 | 粒子行に `points` / `target` を追加 |
+| 繊維 | 粒子行に `points`。`linearSegments` と `tubeSizeFactor` で補間と太さを指定 |
+| 粒子 target | `target` に `targets` 辞書のキーを指定。対象は shape / structure / volume |
 | 架橋・接触・衝突 | `cross_links` / `interactions` / `clashes` に原子 `indices`、種別、距離上下限など |
 | 膜 | `membrane` に `center`・`normal`・`thickness`・`radius` |
 | 対称性 | `symmetry.axes` に `start`・`end`・`order`、任意の cage 頂点と辺 |
@@ -107,6 +131,21 @@ ASA は Shrake–Rupley 法で計算します。衝突の推定は `compute=true
 軌道は実球面調和関数 L=0..4、gaussian / cca / cca-reverse 順に対応し、基底の中心は Bohr 単位です。
 電子密度は占有数を掛けた軌道の二乗和です。G3D はローカル解像度ブロックを読み、染色体・ハプロタイプ・
 領域で絞れます。Kinemage はベクトル、リボン、三角形、球、点、ラベルを読み込みます。
+
+軌道の既定 isovalue は最大絶対値の15%です。Mol* の累積確率による閾値計算とは異なります。
+粒子の `scale` は3軸の正の無次元倍率で、spacefill では `radius * sizeFactor` に乗算します。
+粒子 orientation の軸長は既定で10 Åです。target は指定形状を粒子ごとに回転・配置します。
+旧実装の XYZ 終点への矢印は誤りのため廃止しました。
+
+```json
+{"targets": {"unit": {"kind": "shape", "vertices": [[-1,-1,0],[1,-1,0],[0,1,0]], "faces": [[0,1,2]]}},
+ "particles": [{"target": "unit", "position": [5,0,0], "radius": 2, "quaternion": [0,0,0,1]}]}
+```
+
+shape はメッシュ入力、structure は原子 `positions`・`radii` と `type=spacefill/blob-surface`、
+volume はローカル `grid` と `type=isosurface/dot` を使います。回転中心は `center`、省略時は境界箱の中心です。
+`scaleByRadius` は shape で既定 true、他は false。`targetColor=source` で対象の色を保持します。
+Mol* の target 配信・動的 LOD は含みません。[全表示の監査結果](../audit.md)に検証内容と残る近似を記載しています。
 
 MVS はローカル構造の読み込み、成分選択、表現、色、不透明度、変換、ラベル、snapshot 選択に対応します。
 複雑な注釈ノードは明示スキーマへ変換してください。未対応ノードを無言で省略することはありません。
@@ -127,6 +166,8 @@ Mol* の progressive path tracing そのものではありません。
 標準 `ray` にも保持したメッシュと3方向の密度積分投影が含まれます。既定の PyMOL 透明度モードは重なる透明面を積算しないため、標準 ray はこの粗い投影を使い、専用 ray は積算用設定を一時適用して復元します。専用 `molstar_style ray` は視点に合わせた
 密度断面、輪郭、背景合成、画面効果を追加します。native ray の効果はメッシュ深度サンプルによる近似です。
 表面・blob・相互作用などの数値差もあるため、厳密な Mol* 画像の一致は保証しません。差分は対応表に記載しています。
+専用 ray は両面照明を一時的に有効にして復元します。標準 `ray` は PyMOL の `two_sided_lighting` 設定に従うため、
+設定によって平面や扇形の裏面が暗くなる場合があります。
 
 同じ原子を複数の名前で表示できます。最後のビューを reset すると元の representation が戻ります。
 同名の再適用では新しい形状の生成・読み込み完了後に置き換えます。失敗時は以前のビューを保持します。

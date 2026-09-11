@@ -57,6 +57,70 @@ def test_load_failure_rolls_back(cmd):
     assert cmd.get_names("objects") == ["sample"]
 
 
+def test_ellipsoid_requires_tensors_before_replacing_view(cmd):
+    cmd.pseudoatom("isotropic", pos=[0, 0, 0])
+    entry = molstar_style("spacefill", "isotropic", _self=cmd)
+    objects = cmd.get_names("objects")
+    with pytest.raises(Exception, match="anisotropic"):
+        molstar_style("ellipsoid", "isotropic", _self=cmd)
+    assert manager_for(cmd).entries["molstar"] is entry
+    assert cmd.get_names("objects") == objects
+
+
+def test_anisou_units_and_component_order(cmd):
+    from molstar_style_in_pymol.source import read
+
+    atom = "ATOM      1  C   LIG A   1       1.000   2.000   3.000  1.00 20.00           C  "
+    anisou = (
+        "ANISOU    1  C   LIG A   1  "
+        + "".join(f"{v:7d}" for v in (400, 900, 1600, 200, 100, 150))
+        + "       C  "
+    )
+    cmd.read_pdbstr(atom + "\n" + anisou + "\nEND\n", "aniso")
+    states, _ = read(cmd, "aniso")
+    np.testing.assert_allclose(
+        states["aniso"][0].atoms[0].aniso,
+        [0.04, 0.09, 0.16, 0.02, 0.01, 0.015],
+        rtol=1e-6,
+    )
+
+
+def test_plane_ray_preserves_colors_from_both_sides(cmd, tmp_path):
+    from PIL import Image
+
+    cmd.pseudoatom("plane_atom", pos=[0, 0, 0])
+    cmd.bg_color("white")
+    cmd.hide("everything")
+    before = cmd.get_setting_int("two_sided_lighting")
+    entry = molstar_style(
+        "plane",
+        "plane_atom",
+        color="uniform",
+        params={
+            "colorParams": {"value": 0xFF0000},
+            "frame": "boundingBox",
+            "margin": 3,
+            "mode": "plane",
+            "plane": {"point": [0, 0, 0], "normal": [0, 0, 1]},
+        },
+        _self=cmd,
+    )
+    cmd.orient(entry.name)
+    cmd.zoom(entry.name, 1)
+    for side in range(2):
+        path = tmp_path / f"plane-side-{side}.png"
+        molstar_style("ray", filename=str(path), width=240, height=200, _self=cmd)
+        pixels = np.asarray(Image.open(path).convert("RGB"), dtype=float)
+        assert (
+            np.count_nonzero(
+                (pixels[:, :, 0] > 1.5 * pixels[:, :, 1]) & (pixels[:, :, 0] > 40)
+            )
+            > 100
+        )
+        assert cmd.get_setting_int("two_sided_lighting") == before
+        cmd.turn("x", 180)
+
+
 def test_manual_delete_restores(cmd):
     before = reps(cmd)
     entry = molstar_style("cartoon", _self=cmd)

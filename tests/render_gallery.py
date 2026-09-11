@@ -86,9 +86,11 @@ def load_sample(cmd, style, structure):
     elif style in ATOMIC:
         cmd.fragment("trp", "sample")
         if style == "ellipsoid":
+            cmd.remove("sample and hydro")
             model = cmd.get_model("sample")
             for atom in model.atom:
-                atom.u_aniso = [0.12, 0.3, 0.6, 0.03, 0.02, 0.02]
+                # Synthetic displacement tensors in square angstroms, not measured ADPs.
+                atom.u_aniso = [0.04, 0.09, 0.16, 0.02, 0.01, 0.015]
             cmd.delete("sample")
             cmd.load_model(model, "sample")
     elif style in SYNTHETIC and style != "mvs":
@@ -226,10 +228,13 @@ def main():
                 "sample",
                 quality=args.quality,
                 data=data,
+                params={"sizeFactor": 0.12} if style == "dot" else None,
                 quiet=1,
                 _self=cmd,
             )
-            if style in SYNTHETIC and style not in ("mvs", "pairwise-metric"):
+            if (
+                style in SYNTHETIC and style not in ("mvs", "pairwise-metric")
+            ) or style == "plane":
                 cmd.orient(entry.name)
                 cmd.turn("y", 20)
                 cmd.turn("x", 15)
@@ -245,6 +250,8 @@ def main():
             if entry.name not in manager_for(cmd).entries:
                 raise RuntimeError(f"OpenGL callback failed for {style}")
             record = {"specimen": specimen(style), "command": f"molstar_style {style}"}
+            if style == "dot":
+                record["params"] = {"sizeFactor": 0.12}
             for renderer, operation in (("gpu", "png"), ("ray", "ray")):
                 path = args.output / f"{style}-{renderer}.png"
                 molstar_style(

@@ -81,7 +81,7 @@ def symbol(center, shape, radius, color, owner, axes=None, detail=12):
     return mesh
 
 
-def geometry(state, params, quality):
+def geometry(state, params, quality, colors=None):
     groups = {}
     for i, a in enumerate(state.atoms):
         if a.resn in tables()["saccharides"]:
@@ -91,18 +91,41 @@ def geometry(state, params, quality):
         raise ValueError("No recognized carbohydrate residues in the selection")
     centers = {}
     pieces = []
+    visuals = params.get(
+        "visuals",
+        ["carbohydrate-symbol", "carbohydrate-link", "carbohydrate-terminal-link"],
+    )
     radius = float(params.get("sizeFactor", 1.75))
     for key, ids in groups.items():
         xyz = state.coords[ids]
         center = xyz.mean(axis=0)
         _, _, axes = np.linalg.svd(xyz - center, full_matrices=True)
         shape, color = sugar_info(key[-1])
-        pieces.append(symbol(center, shape, radius, rgb(color), ids[0], axes))
+        if np.linalg.det(axes) < 0:
+            axes[-1] *= -1
+        if "carbohydrate-symbol" in visuals:
+            pieces.append(
+                symbol(
+                    center,
+                    shape,
+                    radius,
+                    rgb(color) if colors is None else colors[ids[0]],
+                    ids[0],
+                    axes,
+                )
+            )
         for i in ids:
             centers[i] = (center, ids[0])
     links = set()
     for i, j in state.bonds:
         if i not in centers and j not in centers:
+            continue
+        visual = (
+            "carbohydrate-link"
+            if i in centers and j in centers
+            else "carbohydrate-terminal-link"
+        )
+        if visual not in visuals:
             continue
         a, ai = centers.get(i, (state.coords[i], i))
         b, bi = centers.get(j, (state.coords[j], j))
@@ -114,12 +137,4 @@ def geometry(state, params, quality):
                     a, b, float(params.get("linkSizeFactor", 0.25)), rgb(0x999999), ai
                 )
             )
-    visuals = params.get(
-        "visuals",
-        ["carbohydrate-symbol", "carbohydrate-link", "carbohydrate-terminal-link"],
-    )
-    if "carbohydrate-symbol" not in visuals:
-        pieces = pieces[len(groups) :]
-    elif not any("link" in v for v in visuals):
-        pieces = pieces[: len(groups)]
     return result.add(merge(pieces), state.atoms)

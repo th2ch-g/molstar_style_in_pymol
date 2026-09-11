@@ -48,6 +48,7 @@ def molecule():
         a.coord = list(pos)
         a.ss = ss
         a.b = 10 + i
+        a.u_aniso = list(atoms[-1].aniso)
         a.vdw = atoms[-1].vdw
         a.hetatm = kind == "other"
         model.atom.append(a)
@@ -101,6 +102,8 @@ def molecule():
             bond(group[i], group[(i + 1) % 6])
         if k:
             bond(group[0] - 6, group[0])
+        else:
+            bond(0, group[0])
     group = []
     for i, name in enumerate(("N9", "C8", "N7", "C5", "C6", "N1", "C2", "N3", "C4")):
         t = i * 2 * np.pi / 9
@@ -159,15 +162,22 @@ def data_for(rep, state=None):
         return {"grid": scalar_grid(rep == "segment")}
     if rep.startswith("particle-"):
         return {
+            "targets": {
+                "sample": {
+                    "kind": "shape",
+                    "vertices": [[-1, -1, -1], [1, -1, 1], [-1, 1, 1], [1, 1, -1]],
+                    "faces": [[0, 1, 2], [0, 3, 1], [0, 2, 3], [1, 3, 2]],
+                }
+            },
             "particles": [
                 {
                     "position": [0, 0, 0],
                     "radius": 0.5,
-                    "target": [4, 3, 2],
+                    "target": "sample",
                     "points": [[0, 0, 0], [2, 1, 0], [3, 2, 1]],
                     "quaternion": [0, 0, 0, 1],
                 }
-            ]
+            ],
         }
     if rep in (
         "distance",

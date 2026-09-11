@@ -38,7 +38,8 @@ def cgo_mesh(piece, profile, rotation=None, ray_only=False):
     from pymol.cgo import ALPHA, BEGIN, COLOR, END, NORMAL, TRIANGLE, TRIANGLES, VERTEX
 
     mesh = piece.mesh
-    faces = mesh.faces[:, ::-1]
+    # PyMOL reverses BEGIN/TRIANGLES internally; the direct TRIANGLE opcode does not.
+    faces = mesh.faces[:, ::-1] if ray_only else mesh.faces
     color = bake(piece, profile, rotation)
     if ray_only:
         values = np.empty((len(faces), 30), np.float32)
@@ -205,7 +206,7 @@ def image(manager, filename, width, height, ray):
                         disabled.append(name)
                         cmd.disable(name)
             # Edges are explicit geometry, avoiding an extra global outline pass.
-            values = {"ray_trace_mode": 0}
+            values = {"ray_trace_mode": 0, "two_sided_lighting": 1}
             if any(d.volumes for d in active):
                 values.update(
                     triangle_max_passes=512,

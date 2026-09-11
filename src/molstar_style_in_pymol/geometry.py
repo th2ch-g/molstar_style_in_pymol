@@ -54,6 +54,53 @@ def build(state, representation, color, p, data, quality):
     if representation in VOLUME:
         if "grid" not in data:
             raise ValueError(f"{representation} requires a local map or volume object")
+        theme = (
+            (
+                "volume-value"
+                if representation == "direct-volume"
+                else "volume-segment"
+                if representation == "segment"
+                else "uniform"
+            )
+            if color in ("auto", "keep")
+            else color
+        )
+        p["_colorTheme"] = theme
+        p.update(
+            {
+                k: v
+                for k, v in p.get("colorParams", {}).items()
+                if k in ("colorList", "domain")
+            }
+        )
+        if theme == "uniform":
+            p.setdefault("color", 0xCCCCCC)
+        elif theme == "volume-instance":
+            from .themes import categorical
+
+            p["color"] = categorical(
+                [data.get("instance", 0)], p.get("colorList", "many-distinct")
+            )[0]
+        elif theme == "volume-segment" and representation != "segment":
+            raise ValueError("volume-segment requires the segment representation")
+        elif theme == "volume-value" and representation == "isosurface":
+            from .themes import scale
+
+            p["color"] = scale(
+                [
+                    data["grid"].level(
+                        p.get("isoValue", {"kind": "relative", "relativeValue": 1})
+                    )
+                ],
+                p.get("colorList", "viridis"),
+                p.get(
+                    "domain",
+                    [
+                        float(data["grid"].values.min()),
+                        float(data["grid"].values.max()),
+                    ],
+                ),
+            )[0]
         return volume.volume_geometry(data["grid"], representation, p, quality)
     if representation in PARTICLE:
         return shapes.particles(data, representation, p)

@@ -149,6 +149,7 @@ def colors(
                 "ellipsoid",
                 "spacefill",
                 "polyhedron",
+                "plane",
             )
             else "chain-id"
         )

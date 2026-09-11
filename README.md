@@ -5,7 +5,7 @@ It provides a single `molstar_style` command, local scientific inputs, interacti
 OpenGL drawing, and native ray interoperability. Node.js, Mol*, CueMol, and network
 services are not runtime dependencies.
 
-[English guide](docs/guide.md) · [日本語ガイド](docs/ja/guide.md) · [Coverage and differences](docs/coverage.md) · [Gallery](docs/gallery.md)
+[English guide](docs/guide.md) · [日本語ガイド](docs/ja/guide.md) · [Coverage and differences](docs/coverage.md) · [Geometry audit](docs/audit.md) · [Gallery](docs/gallery.md)
 
 ```text
 molstar_style

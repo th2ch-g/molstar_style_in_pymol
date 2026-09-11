@@ -1,6 +1,6 @@
 # Mol*-inspired visualization in PyMOL
 
-[日本語](ja/guide.md) · [Coverage](coverage.md) · [GPU/ray gallery](gallery.md)
+[日本語](ja/guide.md) · [Coverage](coverage.md) · [Geometry audit](audit.md) · [GPU/ray gallery](gallery.md)
 
 `molstar_style style, selection=all` applies a named managed view. The default
 is `polymer-and-ligand`: polymer cartoon, ligand/ion sticks and spheres, water
@@ -48,22 +48,50 @@ molstar_style('cartoon', 'chain A', params={
 | Family | Parameters |
 | --- | --- |
 | Atoms | `sizeFactor`, `ignoreHydrogens`, `sizeAspectRatio`, `multipleBonds` (`off`, `symmetric`, `offset`), `aromaticBonds`, `visuals` |
-| Ellipsoids | Anisotropic atom tensors; `probability` defaults to 0.5; isotropic atoms use spheres |
+| Ellipsoids | Anisotropic atom tensors in square angstroms; default axes are `1.5958 * sqrt(abs(eigenvalue)) * sizeFactor`, matching the pinned Mol* source; explicit `probability` uses the exact 3D chi-square quantile |
 | Cartoon/backbone/putty | `sizeFactor`, `aspectRatio`, `arrowFactor`, `tubularHelices`, `linearSegments`, `radialSegments`, `bfactorScale`, `visuals` |
 | Surface | `resolution` in angstroms, `probeRadius`, `radiusOffset`, `smoothness`, `isoValue`, mesh/wireframe `visuals` |
 | Blob | `blobSize`, `method` (`grid`, `clustering`), `clusterIterations`, `shape` (`ellipsoid`, `spherical-harmonics`), `degree`, `regularization` |
+| Structure plane | Atom-colored cross section: `imageResolution`, `mode` (`frame`, `plane`), `axis` (`a`, `b`, `c`), `offset`, `plane` (`point`, `normal`), `rotation`, `frame`, `extent`, `margin`, `cutout`, `defaultColor` |
 | Volume isosurface/dot | `isoValue` (absolute number or `{"kind":"relative","relativeValue":1}`), `visuals`, `showWireframe`, `sizeFactor`; dots: `stride`, `maxPoints` |
 | Slice | `dimension` (`x`, `y`, `z`), `index` or `relativeIndex`, `colorList`, `domain` |
 | Direct volume | `transferFunction`: increasing `[value, color, opacity]` rows, or normalized `controlPoints`: `[fraction, opacity]`; `step` in angstroms |
 | Segments | Integer label grid, `segments` list, `smoothness`, `colorList` |
 | Labels | `level` (`chain`, `residue`, `element`), `sizeFactor`; custom labels: `text`, `textSize` |
-| Measurements | `sizeFactor`, `textSize`, `label`, `arcScale`; positions must define nondegenerate geometry |
+| Measurements | `linesSize`, `dashLength`, `textSize`, `label`, `arcScale` (fraction of the shorter arm), `sectorOpacity`, `visuals`; coincident arms and undefined dihedrals raise errors |
 | Clipping | `clipPlanes`: up to six `[nx,ny,nz,offset]` half-spaces; keeps `n dot position + offset >= 0` |
 
 See `reference.json` (package data) for every standard `visuals` name. Both
 unit and structure visual variants use the same independently generated mesh;
 inter-unit bonds use distinct object/chain/segment identities. A visual requiring
 absent geometry, such as polymer gaps in a continuous chain, can be empty.
+
+Ellipsoids require actual anisotropic tensors. Atoms without a tensor are omitted;
+an entirely tensor-free selection raises an error. Equal eigenvalues give a sphere
+of the tensor-derived radius, never a van der Waals fallback. The default multiplier
+`1.5958` is copied literally from Mol*; it is not the exact 50% probability quantile.
+Ellipsoid bonds default to uniform size 1 and `sizeAspectRatio=0.1` (radius 0.1 Å).
+
+Backbone defaults to radius 0.3 Å; cartoon uses 0.2 Å before ribbon aspect scaling.
+Putty uses `0.2 * (0.2 + 0.1 * B)` Å by default. Explicit `sizeTheme`/`sizeParams`
+also affect polymer widths. `bfactorScale` retains the earlier square-root formula
+only as an explicit compatibility option. Structure orientation defaults to an
+ellipsoid; shape orientation defaults to an oriented box. Their `sizeFactor` and
+`scaleFactor`, respectively, scale the extent around the fitted box center.
+
+Line and point sizes use world-space approximations: bond radius is
+`0.02 * sizeFactor * size`, point radius is `0.075 * sizeFactor * size` Å.
+Line defaults to `sizeFactor=2`; point defaults to 1. Attenuation booleans do not
+change these radii. Line crosses default to lone atoms with total arm length 0.35 Å.
+Screen-pixel size, camera-dependent attenuation, and every upstream bond filter
+are not implemented. Multiple bonds use the reference radius/spacing defaults,
+with an independently selected neighboring atom defining the offset plane.
+
+Volume dots default to radius 1 Å and select values below a negative isovalue.
+Uniform volume slices modulate the chosen color by normalized scalar intensity;
+`isoValue` masks lower values. The local slice interface uses grid-aligned `x/y/z`
+planes (default `x`, middle index), without Mol* periodic mapping or oblique slices.
+Gaussian volumes retain molecular theme colors in both GPU and dedicated ray output.
 
 ## Color, size, and annotations
 
@@ -114,7 +142,8 @@ NPZ loading disables pickle. `data` dictionaries can contain a `Grid` directly.
 | Mesh | `vertices`, integer triangle `faces`; optional `colors`, `color`, `opacity`, `transform`, `label`; multiple items via `meshes` |
 | Mesh BCIF | `mesh`, `mesh_vertex`, `mesh_triangle` tables |
 | Particles | `particles`: rows with `position`, `radius`, optional `quaternion` in XYZW order, `axes`, `scale`, `entity`, `compartment`, `hierarchy`, `color`, `label` |
-| Fibers/targets | Particle rows also require `points` / `target` |
+| Fibers | Particle rows also require `points`; `linearSegments` and `tubeSizeFactor` control the interpolated tube |
+| Particle targets | Particle `target` names an entry in `targets`; each target has `kind: shape/structure/volume` and local geometry, described below |
 | Cross-links | `cross_links`: rows with `indices: [i,j]`, `lower`, `upper`; colors report distance violations |
 | Annotated contacts/clashes | `interactions` / `clashes`: rows with `indices`, `type`, optional `positions`, `color` |
 | Membrane | `membrane`: `center`, `normal`, `thickness`, `radius` |
@@ -135,9 +164,28 @@ they do not infer those scientific annotations from geometry.
 
 Orbital evaluation follows Mol* real solid harmonics L=0..4 and its `gaussian`,
 `cca`, and `cca-reverse` coefficient orders. Density sums occupied squared orbitals.
-A precomputed Cube grid also works. Kinemage handles vectors, ribbons, triangles,
+A precomputed Cube grid also works. The default orbital isovalue is 15% of the
+largest absolute field value, not Mol*'s cumulative-probability threshold.
+Kinemage handles vectors, ribbons, triangles,
 balls, spheres, dots, labels, and words. G3D reads local compressed resolution
 blocks, with haplotype, chromosome, and region filters.
+
+Particle `scale` contains three dimensionless positive factors, multiplied by
+`radius * sizeFactor` for spacefill. Orientation shows axes of `axisLength=10` Å,
+independent of radius. Targets instance geometry, not arrows toward XYZ endpoints:
+
+```json
+{"targets": {"unit": {"kind": "shape", "vertices": [[-1,-1,0],[1,-1,0],[0,1,0]], "faces": [[0,1,2]]}},
+ "particles": [{"target": "unit", "position": [5,0,0], "radius": 2, "quaternion": [0,0,0,1]}]}
+```
+
+Shape targets use the mesh schema; structure targets take atom `positions` and
+`radii` with `type: spacefill/blob-surface`; volume targets take a local `grid`
+with `type: isosurface/dot`. A target may provide `center`; otherwise the bounding
+box midpoint is used. Instances rotate about that center, then translate to the
+particle position. `scaleByRadius` defaults to true for shapes and false for other
+kinds; `targetColor=source` preserves target colors. This local schema does not
+include Mol* target data services, streaming, or dynamic level-of-detail selection.
 
 MVS supports local structure trees (`root/download/parse/structure/component/`
 `representation/color/opacity/transform/label`) and selecting a snapshot from
@@ -173,6 +221,9 @@ does not accumulate overlapping transparent surfaces, so the retained projection
 provide a coarse preview without changing global settings. Use `molstar_style ray` for camera-aligned
 density sampling, explicit mesh outlines, background compositing, and image effects.
 Different renderers and sampling produce visible differences; see the coverage table.
+Dedicated ray export temporarily enables two-sided lighting and restores it after
+rendering. Standard PyMOL `ray` follows the user's native `two_sided_lighting` setting,
+which can darken the back of flat planes or sectors.
 
 ## Lifecycle and performance
 

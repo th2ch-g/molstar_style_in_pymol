@@ -10,6 +10,7 @@ uniform vec3 dimensions;
 uniform vec2 domain;
 uniform float stepSize;
 uniform float opacity;
+uniform bool fieldColor;
 void main() {
     vec4 h0=inverseMvp*vec4(uv*2.0-1.0,-1.0,1.0);
     vec4 h1=inverseMvp*vec4(uv*2.0-1.0,1.0,1.0);
@@ -33,10 +34,15 @@ void main() {
         float t=start+float(i)*delta;
         if(t>end || sum.a>0.985) break;
         vec3 idx=o+t*d;
-        float value=texture3D(field,(idx+0.5)/dimensions).r;
+        vec4 fieldSample=texture3D(field,(idx+0.5)/dimensions);
+        float value=fieldColor ? fieldSample.a : fieldSample.r;
         vec4 rgba=texture1D(transfer,clamp((value-domain.x)/(domain.y-domain.x),0.0,1.0));
+        if(fieldColor) rgba.rgb=fieldSample.rgb;
+        if(value<domain.x || value>domain.y) rgba.a=0.0;
         rgba.a=(1.0-pow(1.0-rgba.a,delta/stepSize))*opacity;
-        if(sum.a<0.01 && rgba.a>0.01) first=t;
+        float contribution=(1.0-sum.a)*rgba.a;
+        if(sum.a<0.02 && sum.a+contribution>=0.02)
+            first=t-delta+delta*clamp((0.02-sum.a)/max(contribution,1e-8),0.0,1.0);
         sum.rgb+=(1.0-sum.a)*rgba.a*rgba.rgb;
         sum.a+=(1.0-sum.a)*rgba.a;
     }

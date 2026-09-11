@@ -82,10 +82,13 @@ def isosurface(grid, level, color=(0.2, 0.6, 0.8), coords=None, colors=None):
             f"Isovalue {level:g} must lie inside [{grid.values.min():g}, {grid.values.max():g}]"
         )
     vertices, faces, normals, _ = marching_cubes(
-        grid.values, level, allow_degenerate=False
+        grid.values, level, allow_degenerate=False, gradient_direction="ascent"
     )
     vertices = grid.world(vertices)
     normals = unit(normals @ np.linalg.inv(grid.transform[:3, :3]))
+    if level < 0:
+        normals = -normals
+        faces = faces[:, ::-1]
     if np.linalg.det(grid.transform[:3, :3]) < 0:
         faces = faces[:, ::-1]
     if coords is not None and len(coords):
@@ -153,11 +156,15 @@ def transfer_function(grid, params):
         raise ValueError(
             "controlPoints requires increasing normalized [value, opacity] pairs"
         )
-    colors = scale(control[:, 0], params.get("colorList", "viridis"), [0, 1])
+    colors = (
+        np.tile(rgb(params["color"]), (len(control), 1))
+        if "color" in params
+        else scale(control[:, 0], params.get("colorList", "viridis"), [0, 1])
+    )
     return np.c_[lo + control[:, 0] * (hi - lo), colors, control[:, 1]]
 
 
-def transfer_values(volume, values, step=1):
+def transfer_values(volume, values, step=1, positions=None):
     t = volume.transfer
     out = np.stack(
         [
@@ -175,11 +182,13 @@ def transfer_values(volume, values, step=1):
     out[..., 3] = (
         1 - np.power(1 - out[..., 3], step / max(volume.step, 1e-6))
     ) * volume.opacity
+    if volume.color_grid is not None and positions is not None:
+        out[..., :3] = volume.sample_colors(positions)
     return out
 
 
 def slice_mesh(grid, params):
-    axis = "xyz".index(params.get("dimension", "z"))
+    axis = "xyz".index(params.get("dimension", "x"))
     other = [i for i in range(3) if i != axis]
     index = float(
         params.get(
@@ -196,9 +205,13 @@ def slice_mesh(grid, params):
     positions[:, axis] = index
     positions[:, other[0]], positions[:, other[1]] = a.ravel(), b.ravel()
     vertices = grid.world(positions)
-    c = scale(
-        grid.sample(vertices), params.get("colorList", "viridis"), params.get("domain")
-    )
+    values = grid.sample(vertices)
+    c = scale(values, params.get("colorList", "viridis"), params.get("domain"))
+    if "color" in params:
+        c[:] = rgb(params["color"])
+        if params.get("_colorTheme", "uniform") == "uniform":
+            low, high = float(grid.values.min()), float(grid.values.max())
+            c *= np.clip((values - low) / max(high - low, 1e-12), 0, 1)[:, None]
     ni, nj = a.shape
     ids = np.arange(ni * nj).reshape(ni, nj)
     x, y, z, w = (
@@ -208,6 +221,10 @@ def slice_mesh(grid, params):
         ids[1:, 1:].ravel(),
     )
     faces = np.concatenate([np.c_[x, y, z], np.c_[y, w, z]])
+    alphas = (
+        values >= grid.level(params.get("isoValue", float(grid.values.min())))
+    ).astype(np.float32)
+    faces = faces[alphas[faces].max(axis=1) > 0]
     normal = unit(np.cross(grid.transform[:3, other[0]], grid.transform[:3, other[1]]))
     return Mesh(
         vertices,
@@ -215,6 +232,7 @@ def slice_mesh(grid, params):
         c,
         faces,
         np.zeros(len(vertices), int),
+        alphas=alphas,
     )
 
 
@@ -240,7 +258,9 @@ def volume_geometry(grid, representation, params, quality="medium"):
         level = grid.level(
             params.get("isoValue", {"kind": "relative", "relativeValue": 1})
         )
-        indices = np.argwhere(grid.values >= level)
+        indices = np.argwhere(
+            grid.values >= level if level >= 0 else grid.values <= level
+        )
         stride = max(1, int(params.get("stride", 1)))
         indices = indices[::stride]
         if len(indices) > int(params.get("maxPoints", 100_000)):
@@ -249,7 +269,11 @@ def volume_geometry(grid, representation, params, quality="medium"):
         colors = scale(
             grid.values[tuple(indices.T)], params.get("colorList", "viridis")
         )
-        radius = float(params.get("sizeFactor", 0.12))
+        if "color" in params:
+            colors[:] = rgb(params["color"])
+        radius = float(params.get("sizeFactor", 1)) * float(
+            params.get("sizeParams", {}).get("value", 1)
+        )
         geometry.add(
             merge([sphere(p, radius, c, 0, 6) for p, c in zip(vertices, colors)]),
             target,
@@ -258,7 +282,13 @@ def volume_geometry(grid, representation, params, quality="medium"):
         if not np.allclose(grid.values, np.rint(grid.values)):
             raise ValueError("Segmentation requires an integer label grid")
         ids = params.get("segments", [int(v) for v in np.unique(grid.values) if v != 0])
-        colors = categorical(ids, params.get("colorList", "many-distinct"))
+        colors = (
+            scale(ids, params.get("colorList", "viridis"), params.get("domain"))
+            if params.get("_colorTheme") == "volume-value"
+            else categorical(ids, params.get("colorList", "many-distinct"))
+        )
+        if "color" in params:
+            colors[:] = rgb(params["color"])
         for value, color in zip(ids, colors):
             mask = grid.values == value
             if not mask.any():
@@ -324,7 +354,7 @@ def density_slices(volume, quality="medium", direction=None):
     vertices, colors, alphas, faces = [], [], [], []
     for z in axes[2]:
         positions = np.c_[xx.ravel(), yy.ravel(), np.full(xx.size, z)] @ basis
-        rgba = transfer_values(volume, grid.sample(positions), spacing)
+        rgba = transfer_values(volume, grid.sample(positions), spacing, positions)
         ids = np.arange(xx.size).reshape(xx.shape)
         a, b, c, d = (
             ids[:-1, :-1].ravel(),
@@ -355,8 +385,10 @@ def density_projection(volume):
     for axis in range(3):
         field = np.moveaxis(volume.grid.values, axis, 0)
         total = np.zeros((*field.shape[1:], 4), float)
-        for values in field:
+        for index, values in enumerate(field):
             rgba = transfer_values(volume, values, float(volume.grid.spacing[axis]))
+            if volume.color_grid is not None:
+                rgba[..., :3] = np.moveaxis(volume.color_grid, axis, 0)[index]
             weight = (1 - total[:, :, 3]) * rgba[:, :, 3]
             total[:, :, :3] += rgba[:, :, :3] * weight[:, :, None]
             total[:, :, 3] += weight

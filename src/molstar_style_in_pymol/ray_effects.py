@@ -10,8 +10,6 @@ from .postprocessing import effect_value
 
 
 def depth_samples(drawings, cmd, width, height):
-    from scipy.spatial import cKDTree
-
     from .export import view_matrix
 
     scale = min(1, 256 / max(width, height))
@@ -21,42 +19,58 @@ def depth_samples(drawings, cmd, width, height):
     view = cmd.get_view()
     fov = np.deg2rad(cmd.get_setting_float("field_of_view"))
     half = abs(view[11]) * np.tan(fov / 2)
-    samples = []
+    depth = np.full((h, w), np.inf)
+    orthoscopic = cmd.get_setting_int("orthoscopic")
     for d in drawings:
         for p in d.pieces:
             points = p.mesh.vertices @ matrix[:3, :3].T + matrix[:3, 3]
             divisor = (
                 np.full(len(points), half)
-                if cmd.get_setting_int("orthoscopic")
+                if orthoscopic
                 else np.maximum(1e-6, -points[:, 2]) * np.tan(fov / 2)
             )
             x = (points[:, 0] / divisor * height / width + 1) / 2 * (w - 1)
             y = (1 - points[:, 1] / divisor) / 2 * (h - 1)
-            samples.append(np.c_[x, y, -points[:, 2]])
-    if not samples:
-        return np.ones((height, width))
-    points = np.concatenate(samples)
-    good = (
-        (points[:, 0] >= 0)
-        & (points[:, 0] < w)
-        & (points[:, 1] >= 0)
-        & (points[:, 1] < h)
-    )
-    points = points[good]
-    if not len(points):
-        return np.ones((height, width))
-    depth = np.full((h, w), np.inf)
-    indices = np.rint(points[:, :2]).astype(int)
-    np.minimum.at(depth, (indices[:, 1], indices[:, 0]), points[:, 2])
-    yy, xx = np.indices(depth.shape)
+            projected = np.c_[x, y, -points[:, 2]]
+            for triangle in projected[p.mesh.faces]:
+                if (triangle[:, 2] <= 0).any():
+                    continue
+                lo = np.maximum(0, np.ceil(triangle[:, :2].min(axis=0)).astype(int))
+                hi = np.minimum(
+                    [w - 1, h - 1], np.floor(triangle[:, :2].max(axis=0)).astype(int)
+                )
+                if np.any(lo > hi):
+                    continue
+                a, b, c = triangle
+                denominator = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (
+                    a[1] - c[1]
+                )
+                if abs(denominator) < 1e-12:
+                    continue
+                yy, xx = np.mgrid[lo[1] : hi[1] + 1, lo[0] : hi[0] + 1]
+                wa = (
+                    (b[1] - c[1]) * (xx - c[0]) + (c[0] - b[0]) * (yy - c[1])
+                ) / denominator
+                wb = (
+                    (c[1] - a[1]) * (xx - c[0]) + (a[0] - c[0]) * (yy - c[1])
+                ) / denominator
+                wc = 1 - wa - wb
+                inside = (wa >= -1e-7) & (wb >= -1e-7) & (wc >= -1e-7)
+                if orthoscopic:
+                    values = wa * a[2] + wb * b[2] + wc * c[2]
+                else:
+                    inverse = wa / a[2] + wb / b[2] + wc / c[2]
+                    values = np.divide(
+                        1, inverse, out=np.full_like(inverse, np.inf), where=inverse > 0
+                    )
+                region = depth[lo[1] : hi[1] + 1, lo[0] : hi[0] + 1]
+                np.minimum(region, np.where(inside, values, np.inf), out=region)
     mask = np.isfinite(depth)
-    distance, index = cKDTree(np.c_[xx[mask], yy[mask]]).query(
-        np.c_[xx.ravel(), yy.ravel()]
-    )
-    filled = depth[mask][index].reshape(depth.shape)
-    lo, hi = float(points[:, 2].min()), float(points[:, 2].max())
-    filled = (filled - lo) / max(hi - lo, 1e-6) * 0.8 + 0.1
-    filled[distance.reshape(depth.shape) > 4] = 1
+    if not mask.any():
+        return np.ones((height, width))
+    lo, hi = float(depth[mask].min()), float(depth[mask].max())
+    filled = np.ones_like(depth)
+    filled[mask] = (depth[mask] - lo) / max(hi - lo, 1e-6) * 0.8 + 0.1
     return np.asarray(
         Image.fromarray(filled.astype(np.float32)).resize(
             (width, height), Image.Resampling.BILINEAR
@@ -74,6 +88,7 @@ def process(data, drawings, cmd):
     width, height = image.size
     array = np.asarray(image).astype(float) / 255
     rgb = array[:, :, :3]
+    original_rgb = rgb.copy()
     alpha = array[:, :, 3]
     depth = depth_samples(drawings, cmd, width, height)
     strength = effect_value(effects.get("occlusion")) + 0.5 * effect_value(
@@ -106,6 +121,15 @@ def process(data, drawings, cmd):
             abs(depth - float(effects.get("focus", 0.5))) * strength * 2, 0, 0.9
         )
         rgb = rgb * (1 - weight[:, :, None]) + blurred * weight[:, :, None]
+    if not cmd.get_setting_int("bg_gradient"):
+        setting_type, value = cmd.get_setting_tuple("bg_rgb")
+        background_color = np.asarray(
+            cmd.get_color_tuple(value[0]) if setting_type == 5 else value
+        )
+        untouched = (alpha > 0.999) & (
+            np.max(abs(original_rgb - background_color), axis=2) < 1 / 255
+        )
+        rgb[untouched] = original_rgb[untouched]
     image = Image.fromarray(
         np.uint8(np.clip(np.dstack([rgb, alpha]), 0, 1) * 255), "RGBA"
     )

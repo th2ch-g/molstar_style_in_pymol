@@ -12,6 +12,9 @@ Atomic views use PyMOL's tryptophan fragment; DNA uses its `fnab` builder.
 Glycans, coordination, volumes, particles, measurements, and extension annotations
 use deterministic synthetic fixtures. Quality, validation, partial-charge, and
 anisotropic-displacement values are demonstrations, not experimental results.
+The ellipsoid example uses heavy atoms with a synthetic positive-definite tensor
+in square angstroms. Volume dots use `sizeFactor=0.12` to separate neighboring dots;
+the command default is 1. Other examples use the style defaults.
 The pairwise metric is a 2D panel exported by both operations, not a ray-traced
 3D object. GPU and ray differences are described in the coverage document.
 
