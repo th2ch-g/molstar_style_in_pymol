@@ -2,6 +2,7 @@
 varying vec2 uv;
 uniform sampler2D image;
 uniform sampler2D depth;
+uniform sampler2D ambientOcclusion;
 uniform vec2 pixel;
 uniform float occlusion;
 uniform float outline;
@@ -15,6 +16,7 @@ void main() {
     vec4 c = texture2D(image, uv);
     float z = texture2D(depth, uv).r;
     if (c.a < 0.001) discard;
+    c.rgb /= c.a;
     float ao = 0.0;
     float edge = 0.0;
     vec4 blur = vec4(0.0);
@@ -31,7 +33,8 @@ void main() {
         vec3 light = texture2D(image, uv + delta*5.0).rgb;
         glow += light * max(0.0, max(light.r, max(light.g, light.b))-0.65);
     }
-    c.rgb *= 1.0 - min(0.8, occlusion*ao/18.0 + illumination*ao/32.0);
+    c.rgb *= max(0.01, 1.0-occlusion*(1.0-texture2D(ambientOcclusion,uv).r));
+    c.rgb *= 1.0-min(0.8,illumination*ao/32.0);
     c.rgb *= 1.0 - outline * min(1.0,edge/4.0);
     float shade = texture2D(depth, uv + pixel*vec2(-8.0,12.0)).r;
     c.rgb *= shade<z-0.0005 && shade>z-0.08 ? 1.0-shadow*0.3 : 1.0;

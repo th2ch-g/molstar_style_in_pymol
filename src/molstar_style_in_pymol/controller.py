@@ -127,10 +127,17 @@ class Manager:
                     values = []
                     for piece in drawing.pieces:
                         if not export.opaque(piece):
-                            values.extend(export.cgo_mesh(piece, drawing.profile))
+                            values.extend(
+                                export.cgo_mesh(
+                                    piece,
+                                    drawing.profile,
+                                    export.view_matrix(cmd),
+                                    ray_only=True,
+                                )
+                            )
                     load(values, alpha, index)
                 if has_ray:
-                    load(export.ray_proxy(drawing), ray, index)
+                    load(export.ray_proxy(drawing, export.view_matrix(cmd)), ray, index)
             for name in names:
                 cmd.group(group, name)
             if has_alpha:

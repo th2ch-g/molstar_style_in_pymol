@@ -3,6 +3,10 @@ Mol* revision 5b1b54ed03b03936041f514b33b8bb129b774d37.
 Copyright (c) 2018-2026 Mol* contributors. Licensed under the MIT license.
 https://github.com/molstar/molstar
 
+GGX/Schlick lighting functions are adapted from Mol*, which adapts three.js.
+Copyright (c) 2017-2021 Mol* contributors.
+Copyright (c) 2010-2021 three.js authors. Licensed under the MIT license below.
+
 ColorBrewer palette data: Copyright (c) 2002 Cynthia Brewer, Mark Harrower,
 and The Pennsylvania State University. Apache License 2.0; see LICENSE.colorbrewer.
 

@@ -6,11 +6,18 @@ Reference: Mol* revision `5b1b54ed03b03936041f514b33b8bb129b774d37`.
 This review compares the local implementation with that source, then checks
 physical invariants numerically and renders each family in PyMOL. Rendering a
 nonempty image alone does not establish agreement with Mol*.
+The later [rendering fidelity comparison](fidelity.md) executes Mol* itself and
+checks matched-camera images, not only local numerical invariants.
 
 ## Corrections
 
 | Area | Incorrect behavior | Corrected behavior and regression evidence |
 | --- | --- | --- |
+| Cartoon shape and frames | One independently swept profile lost flat beta faces and upstream residue-local curvature | Port Catmull–Rom controls, peptide frames, profile sections, sheet arrows and helixorient centers; actual 8GNG, 1CRN and 1BNA source outputs are compared |
+| Materials and lighting | Blinn/Phong-style highlights and native ray double lighting changed the material | Mol* GGX/Schlick/Smith and ambient terms in GPU and CPU, original light direction, scoped neutral native ray illumination, restoration tests |
+| Ambient occlusion | Small screen-pixel rings produced unrelated shadows | Mol* seeded 32-sample hemisphere, view-space normals and bilateral blur in GPU and CPU; plane/raised-surface invariants and matched images |
+| Chain palette | Selected chain order reassigned colors; mmCIF entity grouping was lost | Preserve source order, group by retained entity IDs and retain whole-object colors after selection; 8GNG chain colors checked against actual Mol* |
+| Density ray and transparent output | Coarse transparent triangles remained visible; final framebuffer blending squared alpha | Pixel-wise scalar integration with opaque mesh depth clipping in managed scenes, separate alpha blending at every GPU stage; constant-density analytic and occlusion tests |
 | Ellipsoid bonds | Physical radii and aspect ratio 2/3 made carbon bonds 1.1333 Å thick | Uniform size 1 and aspect ratio 0.1 give 0.1 Å; tests also vary theme, aspect ratio, and factor |
 | Ellipsoid atoms | Missing tensors became van der Waals spheres; reflected eigenvectors reversed winding | Missing tensors are omitted; missing selections fail transactionally; tensor equation, analytic normals, isotropic limit, reflected winding, PDB ANISOU units/order are checked |
 | Ellipsoid scale | Exact 50% chi-square quantile was incorrectly presented as the Mol* default | Default uses Mol*'s literal 1.5958 multiplier and absolute eigenvalues; explicit `probability` remains a separate exact-quantile option |
@@ -35,7 +42,7 @@ nonempty image alone does not establish agreement with Mol*.
 `tests/render_gallery.py` renders all 82 gallery entries locally in both renderers.
 The gallery, including its synthetic inputs, is not an experimental validation dataset.
 
-Local results for this correction: 253 passing pytest cases; 55 standard subvisuals
+Local results for the original geometry correction: 253 passing pytest cases; 55 standard subvisuals
 rendered in GPU/ray; 82 gallery pairs (164 PNGs, 1200 × 900); Ruff and source/wheel
 builds passed. No CI rendering is used. These checks establish the behaviors above,
 not complete upstream parameter or image equivalence.
@@ -44,7 +51,7 @@ not complete upstream parameter or image equivalence.
 
 | Families reviewed | Remaining differences / scope |
 | --- | --- |
-| cartoon, backbone, putty, nucleic alias | Independent Hermite interpolation, frame transport, gap detection, ribbon profiles, and convex base-ring geometry; not all Mol* control points or profile parameters |
+| cartoon, backbone, putty, nucleic alias | Cartoon curves, frames, sections and helixorient centers now follow Mol*. PyMOL merges turn categories into coil, affecting internal cap disks; cyclic/coarse chains, gap detection, backbone cylinders and convex base rings remain approximations |
 | ball-and-stick, line, point, spacefill, ellipsoid | Meshes replace impostors; line/point widths are in Å rather than pixels; bond reference selection, trimming, aromatic perception, symmetry/unit identity and filtering differ. Nonpositive ellipsoid eigenvalues follow Mol* absolute-value handling; this does not validate the scientific quality of ADPs |
 | molecular-surface, gaussian-surface, gaussian-volume, blob-surface | Gaussian grid evaluation and marching-cubes sampling are independent; molecular surface is a voxel erosion approximation, not exact rolling-probe geometry; blob grouping/harmonic fits differ; Gaussian colors use the nearest atom |
 | carbohydrate, polyhedron, orientation, plane, label | SNFG tables are retained, but shape tessellation/face partitions and ring detection differ; coordination uses a distance cutoff; PCA degeneracies, plane rasterization and trimming, and text metrics are independent |
@@ -59,8 +66,8 @@ not complete upstream parameter or image equivalence.
 | mvs, annotation-label, custom-label, pairwise-metric | Supported local MVS subset rejects unsupported nodes; annotation labels require normalized inputs; PAE is a Qt matrix panel with residue-pair selection, not a Mol* browser panel |
 | default, auto, empty, polymer-and-ligand, protein-and-nucleic, polymer-cartoon, atomic-detail, coarse-surface, illustrative, auto-lod, mesoscale | Independent preset composition; auto/auto-lod/mesoscale use static atom-count thresholds, without Mol* structure-size categories or distance-dependent LOD |
 | validation-geometry, validation-density, validation-rci, quality-plddt, quality-qmean, partial-charges | Color supplied aligned annotations; do not calculate validation metrics or partial charges |
-| matte, plastic, glossy, metallic | Reference material parameter values feed a local shader; no physically equivalent Mol* BRDF; transparent CGO/ray lighting uses baked tones |
-| outline, occlusion, shadow, cel, xray, unlit, bloom, dof, illumination, background, antialias | Independent screen-space/ray effects; illumination is not a path tracer. Backgrounds use local bitmap preparation; sampling and compositing cannot guarantee pixel equivalence |
+| matte, plastic, glossy, metallic | Mol* BRDF and camera-relative lighting; dedicated ray evaluates vertices without derivative roughness/bump. Native lighting still applies to standard ray and mixed unmanaged scenes |
+| outline, occlusion, shadow, cel, xray, unlit, bloom, dof, illumination, background, antialias | Mol* 32-sample SSAO, with independent rasterization and no multiscale/transparent SSAO; other screen effects, backgrounds and antialiasing retain approximations. Illumination is not a path tracer |
 
 All named families remain drawable through the documented interface. This is a
 Mol*-inspired PyMOL implementation, not a complete parameter-compatible port.

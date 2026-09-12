@@ -123,7 +123,12 @@ def draw_volumes(pool, drawing):
             )
             gl.glActiveTexture(gl.GL_TEXTURE0)
             gl.glEnable(gl.GL_BLEND)
-            gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
+            gl.glBlendFuncSeparate(
+                gl.GL_SRC_ALPHA,
+                gl.GL_ONE_MINUS_SRC_ALPHA,
+                gl.GL_ONE,
+                gl.GL_ONE_MINUS_SRC_ALPHA,
+            )
             gl.glBegin(gl.GL_QUADS)
             for x, y in ((0, 0), (1, 0), (1, 1), (0, 1)):
                 gl.glTexCoord2f(x, y)

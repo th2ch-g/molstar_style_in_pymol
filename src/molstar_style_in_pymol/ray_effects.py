@@ -9,10 +9,10 @@ from scipy.ndimage import gaussian_filter, minimum_filter, shift
 from .postprocessing import effect_value
 
 
-def depth_samples(drawings, cmd, width, height):
+def depth_samples(drawings, cmd, width, height, full=False, raw=False):
     from .export import view_matrix
 
-    scale = min(1, 256 / max(width, height))
+    scale = 1 if full else min(1, 256 / max(width, height))
     w = max(2, int(width * scale))
     h = max(2, int(height * scale))
     matrix = view_matrix(cmd)
@@ -29,8 +29,8 @@ def depth_samples(drawings, cmd, width, height):
                 if orthoscopic
                 else np.maximum(1e-6, -points[:, 2]) * np.tan(fov / 2)
             )
-            x = (points[:, 0] / divisor * height / width + 1) / 2 * (w - 1)
-            y = (1 - points[:, 1] / divisor) / 2 * (h - 1)
+            x = (points[:, 0] / divisor * height / width + 1) / 2 * w - 0.5
+            y = (1 - points[:, 1] / divisor) / 2 * h - 0.5
             projected = np.c_[x, y, -points[:, 2]]
             for triangle in projected[p.mesh.faces]:
                 if (triangle[:, 2] <= 0).any():
@@ -65,6 +65,8 @@ def depth_samples(drawings, cmd, width, height):
                     )
                 region = depth[lo[1] : hi[1] + 1, lo[0] : hi[0] + 1]
                 np.minimum(region, np.where(inside, values, np.inf), out=region)
+    if raw:
+        return depth
     mask = np.isfinite(depth)
     if not mask.any():
         return np.ones((height, width))
@@ -78,7 +80,7 @@ def depth_samples(drawings, cmd, width, height):
     )
 
 
-def process(data, drawings, cmd):
+def process(data, drawings, cmd, ambient_occlusion=None):
     effects = {}
     background = None
     for d in drawings:
@@ -90,10 +92,25 @@ def process(data, drawings, cmd):
     rgb = array[:, :, :3]
     original_rgb = rgb.copy()
     alpha = array[:, :, 3]
-    depth = depth_samples(drawings, cmd, width, height)
-    strength = effect_value(effects.get("occlusion")) + 0.5 * effect_value(
-        effects.get("illumination")
+    depth = (
+        depth_samples(drawings, cmd, width, height)
+        if any(
+            effect_value(effects.get(key)) > 0
+            for key in ("shadow", "dof", "illumination")
+        )
+        else np.ones((height, width))
     )
+    strength = effect_value(effects.get("occlusion"))
+    if any(d.volumes for d in drawings):
+        strength = 0
+    if strength:
+        if ambient_occlusion is None:
+            from .occlusion import calculate
+
+            raw_depth = depth_samples(drawings, cmd, width, height, full=True, raw=True)
+            ambient_occlusion = calculate(raw_depth, cmd, effects.get("occlusion"))
+        rgb *= np.maximum(0.01, 1 - strength * (1 - ambient_occlusion))[:, :, None]
+    strength = 0.5 * effect_value(effects.get("illumination"))
     if strength:
         near = minimum_filter(depth, size=max(3, int(width / 100) | 1))
         delta = depth - near

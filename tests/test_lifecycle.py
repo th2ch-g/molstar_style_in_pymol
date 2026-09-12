@@ -121,6 +121,71 @@ def test_plane_ray_preserves_colors_from_both_sides(cmd, tmp_path):
         cmd.turn("x", 180)
 
 
+def test_dedicated_material_ray_restores_native_lighting(cmd, tmp_path):
+    cmd.hide("everything")
+    keys = (
+        "ambient",
+        "direct",
+        "reflect",
+        "specular",
+        "ray_shadows",
+        "depth_cue",
+        "ray_trace_fog",
+        "ambient_occlusion_mode",
+        "ray_transparency_specular",
+    )
+    before = {key: cmd.get_setting_tuple(key) for key in keys}
+    molstar_style("spacefill", "sample", _self=cmd)
+    molstar_style(
+        "ray", filename=str(tmp_path / "material.png"), width=120, height=100, _self=cmd
+    )
+    assert {key: cmd.get_setting_tuple(key) for key in keys} == before
+
+
+def test_ray_detects_visible_unmanaged_objects(cmd):
+    from molstar_style_in_pymol.export import has_unmanaged_geometry
+
+    assert has_unmanaged_geometry(cmd, set())
+    cmd.hide("everything")
+    assert not has_unmanaged_geometry(cmd, set())
+    cmd.pseudoatom("other", pos=[10, 0, 0])
+    cmd.show("spheres", "other")
+    assert has_unmanaged_geometry(cmd, set())
+    assert not has_unmanaged_geometry(cmd, {"other"})
+
+
+def test_chain_palette_preserves_model_order_after_selection(cmd):
+    from molstar_style_in_pymol.source import read
+
+    for chain, segi in (("A", "A"), ("L", "B"), ("H", "C")):
+        cmd.pseudoatom("chains", chain=chain, segi=segi, pos=[0, 0, 0])
+    states, _ = read(cmd, "chains and chain H")
+    assert states["chains"][0].atoms[0].chain_index == 2
+
+
+def test_chain_palette_groups_mmcif_entities_before_assigning_colors(cmd):
+    from molstar_style_in_pymol.source import read
+
+    for chain, segi, entity in (
+        ("A", "A", "1"),
+        ("L", "B", "2"),
+        ("H", "C", "3"),
+        ("X", "D", "1"),
+        ("Y", "E", "2"),
+        ("Z", "F", "3"),
+    ):
+        cmd.pseudoatom("chains", chain=chain, segi=segi, pos=[0, 0, 0])
+        cmd.alter(
+            f"chains and chain {chain}", "custom = entity", space={"entity": entity}
+        )
+    states, _ = read(cmd, "chains and chain A+H+L")
+    assert {a.chain: a.chain_index for a in states["chains"][0].atoms} == {
+        "A": 0,
+        "L": 2,
+        "H": 4,
+    }
+
+
 def test_manual_delete_restores(cmd):
     before = reps(cmd)
     entry = molstar_style("cartoon", _self=cmd)

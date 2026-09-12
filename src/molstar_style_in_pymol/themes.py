@@ -236,6 +236,11 @@ def colors(
             if isinstance(params.get("palette", {}), dict)
             else params["palette"]
         )
+        if mode == "chain-id" and all(a.chain_index is not None for a in atoms):
+            color_list = palette(value)
+            return np.array(
+                [color_list[a.chain_index % len(color_list)] for a in atoms]
+            )
         return categorical(values, value)
     if mode in (
         "secondary-structure",

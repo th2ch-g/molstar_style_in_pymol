@@ -32,6 +32,7 @@ class Atom:
     formal_charge: float = 0.0
     partial_charge: float = 0.0
     aniso: tuple = ()
+    chain_index: int | None = None
 
 
 @dataclass
@@ -102,6 +103,21 @@ def read(cmd, selection, budget_bytes=None):
     atom_cache = {}
     estimated_bytes = 0
     for obj in objects:
+        chain_rows = []
+        cmd.iterate(
+            "%" + obj,
+            "out.append((rank, segi, chain, custom))",
+            space={"out": chain_rows},
+        )
+        # PyMOL retains mmCIF label_entity_id in custom and input order in rank.
+        # Mol* groups chains by entity before constructing its root color map.
+        entities = {}
+        for _, segi, chain, entity in sorted(chain_rows, key=lambda row: row[0]):
+            entities.setdefault(entity, {}).setdefault((segi, chain), None)
+        chain_indices = {}
+        for chains in entities.values():
+            for _, chain in chains:
+                chain_indices.setdefault(chain, len(chain_indices))
         keys = [key for key in properties if key[0] == obj]
         count = cmd.count_states(obj)
         estimated_bytes += len(keys) * count * 400
@@ -144,6 +160,7 @@ def read(cmd, selection, budget_bytes=None):
                             getattr(a, "formal_charge", 0.0),
                             getattr(a, "partial_charge", 0.0),
                             tuple(getattr(a, "u_aniso", ())),
+                            chain_indices[a.chain],
                         )
                     atoms.append(atom_cache[key])
                     prop.append(p)

@@ -97,13 +97,16 @@ class Pool:
 
         if name not in self.programs:
             root = files(__package__).joinpath("shaders")
+            fragment = root.joinpath(name + ".frag").read_text()
+            if "#include lighting" in fragment:
+                fragment = fragment.replace(
+                    "#include lighting", root.joinpath("lighting.frag").read_text()
+                )
             self.programs[name] = compileProgram(
                 compileShader(
                     root.joinpath(name + ".vert").read_text(), gl.GL_VERTEX_SHADER
                 ),
-                compileShader(
-                    root.joinpath(name + ".frag").read_text(), gl.GL_FRAGMENT_SHADER
-                ),
+                compileShader(fragment, gl.GL_FRAGMENT_SHADER),
                 validate=False,
             )
         return self.programs[name]
@@ -247,6 +250,33 @@ class Pool:
             )
             integer("cel", drawing.profile.params.get("cel", False))
             integer("xray", drawing.profile.params.get("xray", False))
+            integer("flatShaded", drawing.profile.params.get("flatShaded", False))
+            for key, default in (("bumpFrequency", 0), ("bumpAmplitude", 1)):
+                gl.glUniform1f(
+                    gl.glGetUniformLocation(program, key),
+                    float(drawing.profile.params.get(key, default)),
+                )
+            from .lighting import settings as light_settings
+
+            directions, colors, ambient, exposure = light_settings(drawing.profile)
+            integer("lightCount", len(directions))
+            if len(directions):
+                gl.glUniform3fv(
+                    gl.glGetUniformLocation(program, "lightDirection"),
+                    len(directions),
+                    directions.astype(np.float32),
+                )
+                gl.glUniform3fv(
+                    gl.glGetUniformLocation(program, "lightColor"),
+                    len(colors),
+                    colors.astype(np.float32),
+                )
+            gl.glUniform3f(gl.glGetUniformLocation(program, "ambientColor"), *ambient)
+            gl.glUniform1f(gl.glGetUniformLocation(program, "exposure"), exposure)
+            gl.glUniform1f(
+                gl.glGetUniformLocation(program, "celSteps"),
+                float(drawing.profile.params.get("celSteps", 5)),
+            )
             planes = np.asarray(
                 drawing.profile.params.get("clipPlanes", []), np.float32
             ).reshape(-1, 4)
@@ -255,28 +285,62 @@ class Pool:
                 gl.glUniform4fv(
                     gl.glGetUniformLocation(program, "clipPlanes"), len(planes), planes
                 )
-            for piece in drawing.pieces:
-                if (
-                    piece.mesh.opacity < 0.999999
-                    or np.min(piece.mesh.alphas, initial=1) < 0.999999
-                ):
-                    continue
+            from .export import opaque
+
+            ordered = [p for p in drawing.pieces if opaque(p)]
+            ordered += sorted(
+                (p for p in drawing.pieces if not opaque(p)),
+                key=lambda p: float(
+                    (
+                        p.mesh.vertices.mean(axis=0) @ modelview[:3, :3].T
+                        + modelview[:3, 3]
+                    )[2]
+                ),
+            )
+            for piece in ordered:
+                transparent = not opaque(piece)
+                if transparent:
+                    gl.glEnable(gl.GL_BLEND)
+                    gl.glBlendFuncSeparate(
+                        gl.GL_SRC_ALPHA,
+                        gl.GL_ONE_MINUS_SRC_ALPHA,
+                        gl.GL_ONE,
+                        gl.GL_ONE_MINUS_SRC_ALPHA,
+                    )
+                    gl.glDepthMask(False)
+                else:
+                    gl.glDisable(gl.GL_BLEND)
+                    gl.glDepthMask(True)
                 integer("unlit", piece.unlit or drawing.profile.ignore_light)
                 handles, count, _ = self.buffer(piece)
                 gl.glBindBuffer(gl.GL_ARRAY_BUFFER, handles[0])
-                gl.glBindBuffer(gl.GL_ELEMENT_ARRAY_BUFFER, handles[1])
+                gl.glBindBuffer(
+                    gl.GL_ELEMENT_ARRAY_BUFFER, 0 if transparent else handles[1]
+                )
                 gl.glVertexPointer(3, gl.GL_FLOAT, 40, c_void_p(0))
                 gl.glNormalPointer(gl.GL_FLOAT, 40, c_void_p(12))
                 gl.glColorPointer(4, gl.GL_FLOAT, 40, c_void_p(24))
-                gl.glDrawElements(
-                    gl.GL_TRIANGLES, count, gl.GL_UNSIGNED_INT, c_void_p(0)
-                )
+                indices = c_void_p(0)
+                if transparent:
+                    faces = piece.mesh.faces
+                    centers = piece.mesh.vertices[faces].mean(axis=1)
+                    depth = centers @ modelview[2, :3] + modelview[2, 3]
+                    indices = np.ascontiguousarray(
+                        faces[np.argsort(depth)], dtype=np.uint32
+                    )
+                gl.glDrawElements(gl.GL_TRIANGLES, count, gl.GL_UNSIGNED_INT, indices)
+            gl.glDepthMask(True)
             if drawing.volumes:
                 from .volume_gpu import draw_volumes
 
                 draw_volumes(self, drawing)
             if framebuffer is not None:
-                framebuffer.composite(self.program("post"), drawing.profile.effects)
+                effects = drawing.profile.effects
+                if drawing.volumes:
+                    # Direct volume accumulation has no unique surface depth.
+                    # Mol* applies surface occlusion before the volume color pass.
+                    effects = {**effects, "occlusion": False}
+                framebuffer.composite(self.program("post"), effects, projection, self)
             if (
                 self.show_selection
                 and drawing.selected is not None

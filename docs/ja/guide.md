@@ -1,6 +1,6 @@
 # PyMOL で使う Mol* 風表示
 
-[English](../guide.md) · [対応表と差分](../coverage.md) · [GPU/ray ギャラリー](../gallery.md)
+[English](../guide.md) · [対応表と差分](../coverage.md) · [Mol* との比較](fidelity.md) · [GPU/ray ギャラリー](../gallery.md)
 
 `molstar_style` は独立した Python 実装です。Mol* の参照版は
 `5b1b54ed03b03936041f514b33b8bb129b774d37`。Node.js、Mol*、CueMol、外部サーバーは不要です。
@@ -72,6 +72,11 @@ molstar_style('cartoon', params={
 等しい固有値ではテンソル由来の球になります。結合半径は既定で0.1 Åです。
 
 backbone の既定半径は0.3 Å、cartoon はアスペクト比適用前で0.2 Åです。
+cartoon は Mol* の残基ごとの Catmull–Rom 曲線、ペプチド方向からのフレーム、シート平滑化、
+平らな β シートと矢尻を再現します。`helixProfile` / `nucleicProfile` は
+`elliptical`・`rounded`・`square` を指定でき、既定はそれぞれ楕円・矩形です。
+核酸の主鎖は O3' を使います。`tubularHelices` は helixorient 中心軸、`roundCap` はその丸い末端です。
+[実際の Mol* との比較](fidelity.md)で曲線・表面頂点・画像の差を確認できます。
 putty は既定で `0.2 * (0.2 + 0.1 * B)` Åを使い、`sizeTheme` も反映します。
 旧平方根式は `bfactorScale` を明示した場合のみ使います。
 構造の orientation は楕円体、shape-orientation は配向ボックスが既定です。
@@ -88,6 +93,9 @@ uniform 色では密度で明度を変え、`isoValue` より小さい値を透�
 測定の `arcScale` は短い方の腕に対する割合で、角度・二面角は既定で扇形を描きます。
 volume dot の既定半径は1 Åです。負の等値面では閾値以下の点を選びます。
 Gaussian volume の分子色は GPU と ray の両方に反映します。
+`chain-id` は部分選択でも元オブジェクト全体の配色順を保持します。mmCIF では PyMOL が保持する
+entity ID (`custom`) と入力順 (`rank`) から、Mol* と同じ分子種ごとの鎖順を復元します。
+PDB 入力から欠けている mmCIF の情報を復元することはできません。
 
 ## ローカル入力
 
@@ -162,12 +170,30 @@ Mol* の progressive path tracing そのものではありません。
 背景は横グラデーション、放射状グラデーション、ローカル画像、6面の skybox を指定できます。
 明示的に指定しない限り、既存の背景設定は変更しません。
 
-不透明メッシュは GLSL、透明メッシュは頂点照明を焼き付けた CGO、密度は GPU ray marching で表示します。
+不透明・透明メッシュとも Mol* の GGX / Schlick / Smith 材質計算を GLSL で行います。
+透明な三角形は奥から描画し、密度は GPU ray marching で表示します。
+既定の光源はカメラに対して inclination=150°、azimuth=320°、強度0.6、環境光は0.4です。
+`params.lighting` で `light`（最大8灯、それぞれ角度・`color`・`intensity`）、
+`ambientColor`・`ambientIntensity`・`exposure` を指定できます。
+GPU は `flatShaded` と Mol* のノイズを使った `bumpFrequency` / `bumpAmplitude` にも対応します。
+`bumpFrequency` の既定は0です。
+
+occlusion は Mol* と同じ32個の固定サンプル、視点座標の深度法線、両側ぼかしを使います。
+GPU と専用 ray で `radius`（Å の log2、既定5）、`bias`（0.8）、`blurKernelSize`（15）、
+`blurDepthBias`（0.5 Å）を指定できます。多段解像度と透明物体の SSAO は未対応です。
+積算密度には単一の表面深度がないため、直接ボリュームを含む層では表面 SSAO を省きます。
+
 標準 `ray` にも保持したメッシュと3方向の密度積分投影が含まれます。既定の PyMOL 透明度モードは重なる透明面を積算しないため、標準 ray はこの粗い投影を使い、専用 ray は積算用設定を一時適用して復元します。専用 `molstar_style ray` は視点に合わせた
-密度断面、輪郭、背景合成、画面効果を追加します。native ray の効果はメッシュ深度サンプルによる近似です。
+密度断面、輪郭、背景合成、画面効果を追加します。
+管理対象の不透明メッシュだけを含むシーンでは、専用 ray は各画素の密度を直接積算し、メッシュ深度で遮蔽します。
+管理対象外の形状や透明メッシュを含む場合は native ray の断面近似を使います。
 表面・blob・相互作用などの数値差もあるため、厳密な Mol* 画像の一致は保証しません。差分は対応表に記載しています。
-専用 ray は両面照明を一時的に有効にして復元します。標準 `ray` は PyMOL の `two_sided_lighting` 設定に従うため、
-設定によって平面や扇形の裏面が暗くなる場合があります。
+専用 ray は現在の視点で同じ材質計算を各頂点に適用します。管理対象の形状だけを表示するシーンでは
+PyMOL の追加照明を一時的に無効化して二重照明を防ぎ、設定を全て復元します。
+管理対象外の形状が見える混在シーンでは、その照明を維持するため管理対象の色も影響を受けます。
+標準 `ray` は保持済み頂点色と PyMOL の照明を使うため、視点変更後は `refresh` が必要です。
+専用 ray はフラグメント微分による粗さ補正と bump を省略します。輪郭の平滑化・頂点照明・透明度の
+サンプリングにも差が残ります。[比較画像と数値](fidelity.md)を参照してください。
 
 同じ原子を複数の名前で表示できます。最後のビューを reset すると元の representation が戻ります。
 同名の再適用では新しい形状の生成・読み込み完了後に置き換えます。失敗時は以前のビューを保持します。

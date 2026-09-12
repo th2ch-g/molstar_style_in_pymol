@@ -14,21 +14,14 @@ def bake(piece, profile, rotation=None):
     mesh = piece.mesh
     if profile.ignore_light or piece.unlit:
         return mesh.colors
+    from .lighting import shade
+
     rotation = np.eye(3) if rotation is None else rotation
-    normals = mesh.normals @ rotation.T
-    light = unit(np.array([-0.35, 0.6, 1.0]))
-    diffuse = np.abs(normals @ light)
-    if profile.params.get("cel"):
-        diffuse = np.floor(diffuse * 4) / 3
-    rough = float(profile.material["roughness"])
-    metal = float(profile.material["metalness"])
-    base = mesh.colors * (0.28 + 0.72 * diffuse[:, None]) * (1 - metal * 0.35)
-    spec = np.maximum(0, normals @ unit(light + [0, 0, 1])) ** (
-        140 * (1 - rough) + 6 * rough
-    )
-    base += (
-        ((1 - metal) + metal * mesh.colors) * spec[:, None] * (1 - rough * 0.65) * 0.65
-    )
+    normals = mesh.normals @ rotation[:3, :3].T
+    view = np.broadcast_to([0, 0, 1], normals.shape)
+    if rotation.shape == (4, 4):
+        view = -(mesh.vertices @ rotation[:3, :3].T + rotation[:3, 3])
+    base = shade(mesh.colors, normals, view, profile)
     if profile.params.get("xray"):
         base = mesh.colors * (0.15 + 0.85 * (1 - np.abs(normals[:, 2]))[:, None] ** 1.5)
     return np.clip(base, 0, 1)
@@ -71,11 +64,11 @@ def cgo_mesh(piece, profile, rotation=None, ray_only=False):
     return result
 
 
-def ray_proxy(drawing):
+def ray_proxy(drawing, rotation=None):
     result = []
     for piece in drawing.pieces:
         if opaque(piece):
-            result.extend(cgo_mesh(piece, drawing.profile, ray_only=True))
+            result.extend(cgo_mesh(piece, drawing.profile, rotation, ray_only=True))
     from .scene import Piece
     from .volume import density_projection
 
@@ -97,7 +90,7 @@ def opaque(piece):
     )
 
 
-def ray_cgo(drawing, cmd):
+def ray_cgo(drawing, cmd, include_volumes=True):
     from pymol.cgo import ALPHA, CYLINDER
 
     from .scene import Piece
@@ -106,7 +99,7 @@ def ray_cgo(drawing, cmd):
     matrix = view_matrix(cmd)
     result = []
     for piece in drawing.pieces:
-        result.extend(cgo_mesh(piece, drawing.profile, matrix[:3, :3]))
+        result.extend(cgo_mesh(piece, drawing.profile, matrix))
         if drawing.profile.edges != "none":
             edges = visible_edges(
                 piece.edges, matrix, cmd.get_setting_int("orthoscopic"), False
@@ -118,7 +111,7 @@ def ray_cgo(drawing, cmd):
             values[:, 8:11] = drawing.edge_color
             values[:, 11:14] = drawing.edge_color
             result.extend([ALPHA, 1, *values.ravel().tolist()])
-    for volume in drawing.volumes:
+    for volume in drawing.volumes if include_volumes else []:
         result.extend(
             cgo_mesh(
                 Piece(density_slices(volume, "high", matrix[2, :3]), unlit=True),
@@ -163,6 +156,22 @@ def visible_edges(edges, modelview, orthoscopic, creases):
     return edges[keep]
 
 
+def has_unmanaged_geometry(cmd, generated):
+    """Preserve native lighting when another visible object shares the scene."""
+    for name in cmd.get_names("objects", enabled_only=1):
+        if name in generated:
+            continue
+        kind = cmd.get_type(name)
+        if kind == "object:molecule":
+            rows = []
+            cmd.iterate("%" + name, "out.append(reps)", space={"out": rows})
+            if any(rows):
+                return True
+        elif kind not in ("object:group", "object:map", "object:selection"):
+            return True
+    return False
+
+
 def image(manager, filename, width, height, ray):
     if not filename:
         raise ValueError("filename is required for PNG and ray export")
@@ -196,10 +205,17 @@ def image(manager, filename, width, height, ray):
             raster(panel_list[0], width or height or 800).save(stream, format="PNG")
             data = stream.getvalue()
         elif ray:
+            generated = {name for e in manager.entries.values() for name in e.generated}
+            pixel_volumes = any(d.volumes for d in active) and (
+                not has_unmanaged_geometry(cmd, generated)
+                and all(opaque(p) for d in active for p in d.pieces)
+            )
             for drawing in active:
                 name = "_molstar_ray_" + uuid4().hex
-                temporary.append(name)
-                cmd.load_cgo(ray_cgo(drawing, cmd), name, zoom=0)
+                payload = ray_cgo(drawing, cmd, include_volumes=not pixel_volumes)
+                if payload:
+                    temporary.append(name)
+                    cmd.load_cgo(payload, name, zoom=0)
             for entry in manager.entries.values():
                 for name in entry.generated:
                     if name in cmd.get_names("objects", enabled_only=1):
@@ -207,6 +223,19 @@ def image(manager, filename, width, height, ray):
                         cmd.disable(name)
             # Edges are explicit geometry, avoiding an extra global outline pass.
             values = {"ray_trace_mode": 0, "two_sided_lighting": 1}
+            if not has_unmanaged_geometry(cmd, set(temporary) | set(disabled)):
+                # The material is already evaluated; avoid lighting it a second time.
+                values.update(
+                    ambient=1,
+                    direct=0,
+                    reflect=0,
+                    specular=0,
+                    ray_shadows=0,
+                    depth_cue=0,
+                    ray_trace_fog=0,
+                    ambient_occlusion_mode=0,
+                    ray_transparency_specular=0,
+                )
             if any(d.volumes for d in active):
                 values.update(
                     triangle_max_passes=512,
@@ -220,6 +249,10 @@ def image(manager, filename, width, height, ray):
                 values["opaque_background"] = 0
             with settings(cmd, values):
                 data = cmd.png(None, width, height, ray=1, quiet=1)
+            if pixel_volumes:
+                from .volume_ray import composite
+
+                data = composite(data, active, cmd)
             from .ray_effects import process
 
             data = process(data, active, cmd)

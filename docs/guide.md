@@ -1,6 +1,6 @@
 # Mol*-inspired visualization in PyMOL
 
-[日本語](ja/guide.md) · [Coverage](coverage.md) · [Geometry audit](audit.md) · [GPU/ray gallery](gallery.md)
+[日本語](ja/guide.md) · [Coverage](coverage.md) · [Geometry audit](audit.md) · [Mol* comparison](fidelity.md) · [GPU/ray gallery](gallery.md)
 
 `molstar_style style, selection=all` applies a named managed view. The default
 is `polymer-and-ligand`: polymer cartoon, ligand/ion sticks and spheres, water
@@ -49,7 +49,7 @@ molstar_style('cartoon', 'chain A', params={
 | --- | --- |
 | Atoms | `sizeFactor`, `ignoreHydrogens`, `sizeAspectRatio`, `multipleBonds` (`off`, `symmetric`, `offset`), `aromaticBonds`, `visuals` |
 | Ellipsoids | Anisotropic atom tensors in square angstroms; default axes are `1.5958 * sqrt(abs(eigenvalue)) * sizeFactor`, matching the pinned Mol* source; explicit `probability` uses the exact 3D chi-square quantile |
-| Cartoon/backbone/putty | `sizeFactor`, `aspectRatio`, `arrowFactor`, `tubularHelices`, `linearSegments`, `radialSegments`, `bfactorScale`, `visuals` |
+| Cartoon/backbone/putty | `sizeFactor`, `aspectRatio`, `arrowFactor`, `tubularHelices`, `roundCap`, `helixProfile`, `nucleicProfile` (`elliptical`, `rounded`, `square`), `linearSegments`, `radialSegments`, `bfactorScale`, `visuals` |
 | Surface | `resolution` in angstroms, `probeRadius`, `radiusOffset`, `smoothness`, `isoValue`, mesh/wireframe `visuals` |
 | Blob | `blobSize`, `method` (`grid`, `clustering`), `clusterIterations`, `shape` (`ellipsoid`, `spherical-harmonics`), `degree`, `regularization` |
 | Structure plane | Atom-colored cross section: `imageResolution`, `mode` (`frame`, `plane`), `axis` (`a`, `b`, `c`), `offset`, `plane` (`point`, `normal`), `rotation`, `frame`, `extent`, `margin`, `cutout`, `defaultColor` |
@@ -73,6 +73,11 @@ of the tensor-derived radius, never a van der Waals fallback. The default multip
 Ellipsoid bonds default to uniform size 1 and `sizeAspectRatio=0.1` (radius 0.1 Å).
 
 Backbone defaults to radius 0.3 Å; cartoon uses 0.2 Å before ribbon aspect scaling.
+Cartoon follows Mol*'s residue-local Catmull–Rom curves, peptide direction frames,
+sheet smoothing, sharp rectangular beta sheets and tapered arrows. Helices default
+to elliptical sections; nucleic backbones use O3' trace atoms and square sections.
+`tubularHelices` uses helixorient centers; `roundCap` rounds their terminal sections.
+The [reference comparison](fidelity.md) checks actual upstream curves and images.
 Putty uses `0.2 * (0.2 + 0.1 * B)` Å by default. Explicit `sizeTheme`/`sizeParams`
 also affect polymer widths. `bfactorScale` retains the earlier square-root formula
 only as an explicit compatibility option. Structure orientation defaults to an
@@ -100,6 +105,9 @@ color names. Molecular themes use `colorParams`; size themes use `sizeTheme` and
 `sizeParams`. Intrinsic themes read atom identities, element, chain, secondary
 structure, occupancy, B-factor, charges, or van der Waals radii from PyMOL. The
 physical source coordinates and properties are never recolored or rewritten.
+`chain-id` preserves the whole source object's palette order when selecting a
+subset. For mmCIF, PyMOL's retained entity IDs (`custom`) and input order (`rank`)
+reproduce Mol*'s grouping by entity; PDB inputs cannot recover absent mmCIF metadata.
 
 Annotations use one of these explicit alignments:
 
@@ -205,25 +213,45 @@ Materials: `matte`, `plastic`, `glossy`, `metallic`, or a dictionary with
 `shadow`, `cel`, `xray`, `unlit`, `bloom`, `dof`, `illumination`, `antialias`.
 `postprocessing` values can be booleans or dictionaries with `strength`/`intensity`.
 `focus` is normalized depth for depth-of-field effects. Default occlusion is scoped
-to the managed layer. Illumination approximates indirect lighting in screen space;
-this is not Mol*'s progressive path tracer. Ray effects use mesh-depth samples.
+to the managed layer. Its 32 seeded hemisphere samples, view-space depth normals,
+radius, bias and bilateral blur follow Mol* SSAO in both GPU and dedicated ray.
+`postprocessing.occlusion` accepts `radius` (log2 Å, default 5), `bias` (0.8),
+`blurKernelSize` (15) and `blurDepthBias` (0.5 Å). The sample count is fixed at 32;
+multiscale and transparent-object SSAO are not implemented. Layers containing direct
+volumes skip surface SSAO because accumulated density has no unique surface depth.
+Illumination remains a screen-space approximation, not Mol*'s progressive path tracer.
+
+Opaque and transparent meshes use Mol*'s GGX/Schlick/Smith material model with
+dielectric reflectance 0.04 and its diffuse/specular/metal ambient terms. Default
+lighting is a white camera-relative light at inclination 150°, azimuth 320°,
+intensity 0.6, plus white ambient intensity 0.4. `params.lighting` accepts `light`
+(up to eight dictionaries with `inclination`, `azimuth`, `color`, `intensity`),
+`ambientColor`, `ambientIntensity` and `exposure`. `flatShaded` and Mol* noise-based
+`bumpFrequency` / `bumpAmplitude` work in GPU; frequency defaults to zero.
 
 `background` accepts Mol*'s `variant` dictionary with `horizontalGradient`,
 `radialGradient`, `image`, or `skybox`. Images and six cube faces must be local.
 Rotation, blur, saturation, and lightness are prepared outside drawing callbacks.
 The existing background remains unchanged unless a background is explicitly requested.
 
-Opaque geometry uses GLSL/VBOs. Transparent mesh bodies use native CGO with baked
-vertex lighting. Volumes use actual scalar-field ray marching in OpenGL. Standard
+Opaque and transparent geometry use GLSL/VBOs, with sorted transparent triangles.
+Volumes use actual scalar-field ray marching in OpenGL. Standard
 PyMOL `ray` and `png, ray=1` include retained meshes and three pre-integrated density projections;
 these standard commands are not patched. Default PyMOL transparency mode 2
 does not accumulate overlapping transparent surfaces, so the retained projections
 provide a coarse preview without changing global settings. Use `molstar_style ray` for camera-aligned
 density sampling, explicit mesh outlines, background compositing, and image effects.
-Different renderers and sampling produce visible differences; see the coverage table.
-Dedicated ray export temporarily enables two-sided lighting and restores it after
-rendering. Standard PyMOL `ray` follows the user's native `two_sided_lighting` setting,
-which can darken the back of flat planes or sectors.
+For managed scenes with opaque meshes, dedicated density export integrates each
+pixel directly and clips the integral against the native mesh depth. Scenes with
+unmanaged objects or transparent meshes retain the sampled native-plane fallback.
+Dedicated ray evaluates the same material at mesh vertices for the current camera.
+For scenes containing only managed geometry it temporarily neutralizes PyMOL's
+additional lighting, then restores all settings. Visible unmanaged geometry keeps
+the user's native lighting, which also changes managed colors in that mixed ray
+scene. Standard PyMOL `ray` uses the retained vertex colors and native lighting;
+refresh after changing the camera if using that preview. Dedicated ray omits
+fragment-derivative roughness and bump perturbations. Antialiasing, vertex lighting
+and transparency sampling retain small image differences; see [measured results](fidelity.md).
 
 ## Lifecycle and performance
 
@@ -252,7 +280,8 @@ pixi run uv run --no-project python tests/check_real.py --gui --benchmark --stru
 ```
 
 GUI checks create a separate PyMOL process. They never reuse a live user session.
-Gallery images and machine-specific benchmark reports belong in `.cache/`.
+Temporary renders and machine-specific benchmark reports belong in `.cache/`.
+Published gallery and reference-comparison PNGs are tracked in `docs/gallery/`.
 
 ASCII labels use the bundled vector font. Unicode labels use the Qt font system
 when a GUI is present; headless Unicode rendering requires `params.font` pointing

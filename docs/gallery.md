@@ -2,6 +2,9 @@
 
 [README](../README.md#gallery) · [English guide](guide.md) · [日本語ガイド](ja/guide.md) · [Coverage and differences](coverage.md)
 
+See the [actual Mol* comparison](fidelity.md) ([日本語](ja/fidelity.md)) for
+matched-camera 8GNG, material and DNA images with measured geometry and pixel errors.
+
 82 examples cover every drawable named style, plus the nucleic-acid cartoon
 alias. `empty` intentionally removes the managed geometry and has no preview.
 Click an image for its 1200 x 900 PNG. Left: interactive GPU; right: dedicated

@@ -5,7 +5,15 @@ It provides a single `molstar_style` command, local scientific inputs, interacti
 OpenGL drawing, and native ray interoperability. Node.js, Mol*, CueMol, and network
 services are not runtime dependencies.
 
-[English guide](docs/guide.md) · [日本語ガイド](docs/ja/guide.md) · [Coverage and differences](docs/coverage.md) · [Geometry audit](docs/audit.md) · [Gallery](docs/gallery.md)
+[English guide](docs/guide.md) · [日本語ガイド](docs/ja/guide.md) · [Mol* comparison](docs/fidelity.md) · [Coverage and differences](docs/coverage.md) · [Geometry audit](docs/audit.md) · [Gallery](docs/gallery.md)
+
+Ribbon curves, cross sections, GGX materials, lighting and ambient occlusion follow
+the pinned Mol* source. The [matched-camera comparison](docs/fidelity.md) runs actual
+Mol* and PyMOL on 8GNG, 1CRN and DNA, with numerical geometry and image metrics.
+
+| Mol* reference (8GNG) | PyMOL GPU | PyMOL dedicated ray |
+| --- | --- | --- |
+| ![Molstar 8GNG](docs/gallery/reference-molstar-8gng-color-gpu.png) | ![PyMOL GPU 8GNG](docs/gallery/reference-pymol-8gng-color-gpu.png) | ![PyMOL ray 8GNG](docs/gallery/reference-pymol-8gng-color-ray.png) |
 
 ```text
 molstar_style

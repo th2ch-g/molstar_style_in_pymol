@@ -1,0 +1,187 @@
+[
+  {
+    "name": "molstar-8gng-color",
+    "options": {
+      "file": "8gng.cif",
+      "chains": [
+        "A",
+        "H",
+        "L"
+      ],
+      "color": "chain-id",
+      "canvas": {
+        "postprocessing": {
+          "occlusion": {
+            "name": "on",
+            "params": {}
+          },
+          "antialiasing": {
+            "name": "smaa",
+            "params": {}
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "molstar-1crn-matte",
+    "options": {
+      "file": "1crn.cif",
+      "params": {
+        "material": {
+          "metalness": 0,
+          "roughness": 1,
+          "bumpiness": 0
+        }
+      },
+      "canvas": {
+        "postprocessing": {
+          "occlusion": {
+            "name": "on",
+            "params": {}
+          },
+          "antialiasing": {
+            "name": "smaa",
+            "params": {}
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "molstar-1crn-plastic",
+    "options": {
+      "file": "1crn.cif",
+      "params": {
+        "material": {
+          "metalness": 0,
+          "roughness": 0.2,
+          "bumpiness": 0
+        }
+      },
+      "canvas": {
+        "postprocessing": {
+          "occlusion": {
+            "name": "on",
+            "params": {}
+          },
+          "antialiasing": {
+            "name": "smaa",
+            "params": {}
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "molstar-1crn-glossy",
+    "options": {
+      "file": "1crn.cif",
+      "params": {
+        "material": {
+          "metalness": 0,
+          "roughness": 0.6,
+          "bumpiness": 0
+        }
+      },
+      "canvas": {
+        "postprocessing": {
+          "occlusion": {
+            "name": "on",
+            "params": {}
+          },
+          "antialiasing": {
+            "name": "smaa",
+            "params": {}
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "molstar-1crn-metallic",
+    "options": {
+      "file": "1crn.cif",
+      "params": {
+        "material": {
+          "metalness": 1,
+          "roughness": 0.6,
+          "bumpiness": 0
+        }
+      },
+      "canvas": {
+        "postprocessing": {
+          "occlusion": {
+            "name": "on",
+            "params": {}
+          },
+          "antialiasing": {
+            "name": "smaa",
+            "params": {}
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "molstar-1crn-rounded",
+    "options": {
+      "file": "1crn.cif",
+      "params": {
+        "helixProfile": "rounded"
+      },
+      "canvas": {
+        "postprocessing": {
+          "occlusion": {
+            "name": "on",
+            "params": {}
+          },
+          "antialiasing": {
+            "name": "smaa",
+            "params": {}
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "molstar-1crn-tubular",
+    "options": {
+      "file": "1crn.cif",
+      "params": {
+        "tubularHelices": true,
+        "roundCap": true
+      },
+      "canvas": {
+        "postprocessing": {
+          "occlusion": {
+            "name": "on",
+            "params": {}
+          },
+          "antialiasing": {
+            "name": "smaa",
+            "params": {}
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "molstar-1bna",
+    "options": {
+      "file": "1bna.cif",
+      "canvas": {
+        "postprocessing": {
+          "occlusion": {
+            "name": "on",
+            "params": {}
+          },
+          "antialiasing": {
+            "name": "smaa",
+            "params": {}
+          }
+        }
+      }
+    }
+  }
+]

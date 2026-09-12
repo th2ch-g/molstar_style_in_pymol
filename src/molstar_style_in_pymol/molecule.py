@@ -3,7 +3,6 @@
 import itertools
 
 import numpy as np
-from scipy.interpolate import CubicHermiteSpline
 from scipy.spatial import cKDTree
 
 from .mesh import merge, unit
@@ -14,7 +13,6 @@ from .primitives import (
     dashed,
     indexed,
     sphere,
-    sweep,
     text_mesh,
 )
 from .registry import QUALITIES
@@ -308,8 +306,8 @@ def polymer(state, representation, c, r, p, quality):
     linear, radial = QUALITIES[quality]
     linear = int(p.get("linearSegments", linear))
     radial = int(p.get("radialSegments", radial))
-    if not 1 <= linear <= 128 or not 3 <= radial <= 128:
-        raise ValueError("linearSegments must be 1..128; radialSegments must be 3..128")
+    if not 1 <= linear <= 128 or not 2 <= radial <= 128:
+        raise ValueError("linearSegments must be 1..128; radialSegments must be 2..128")
     groups = residues(state)
     anchors = []
     nucleotide = []
@@ -320,7 +318,7 @@ def polymer(state, representation, c, r, p, quality):
         anchor = (
             byname.get("CA")
             if state.atoms[group[0]].kind == "protein"
-            else byname.get("C4'", byname.get("P"))
+            else byname.get("O3'", byname.get("O3*", byname.get("P")))
             if state.atoms[group[0]].kind == "nucleic"
             else None
         )
@@ -386,11 +384,14 @@ def polymer(state, representation, c, r, p, quality):
         if len(ids) == 1:
             result.append(
                 sphere(
-                    state.coords[ids[0]], size * r[ids[0]], c[ids[0]], ids[0], radial
+                    state.coords[ids[0]],
+                    size * r[ids[0]] * (1 if representation == "backbone" else 2),
+                    c[ids[0]],
+                    ids[0],
+                    radial,
                 )
             )
             continue
-        points = state.coords[ids]
         if representation == "backbone":
             for i, j in (
                 itertools.pairwise(ids)
@@ -409,54 +410,19 @@ def polymer(state, representation, c, r, p, quality):
                     sphere(state.coords[i], size * r[i], c[i], i, radial) for i in ids
                 )
             continue
-        t = np.arange(len(ids))
-        tangent = np.gradient(points, axis=0)
-        samples = np.linspace(0, len(ids) - 1, (len(ids) - 1) * linear + 1)
-        xyz = CubicHermiteSpline(t, points, tangent)(samples)
-        owner = np.array(ids)[
-            np.clip(np.floor(samples + 0.5).astype(int), 0, len(ids) - 1)
-        ]
-        widths = size * np.interp(samples, t, r[ids])
-        thickness = widths.copy()
-        hints = np.zeros_like(xyz)
-        for k, i in enumerate(owner):
-            a = state.atoms[i]
-            if representation == "putty" and "bfactorScale" in p:
-                widths[k] = thickness[k] = size * max(
-                    0.25, np.sqrt(max(a.bfactor, 0) / float(p.get("bfactorScale", 25)))
-                )
-            elif representation != "putty" and (
-                a.ss in ("H", "S") or a.kind == "nucleic"
-            ):
-                widths[k] *= float(p.get("aspectRatio", 5))
-                if a.ss == "H" and p.get("tubularHelices", False):
-                    thickness[k] = widths[k] * 1.5
-                    widths[k] = thickness[k]
-                if a.ss == "S":
-                    segment = int(np.clip(np.floor(samples[k]), 0, len(ids) - 2))
-                    if (
-                        state.atoms[ids[segment + 1]].ss != "S"
-                        or segment == len(ids) - 2
-                    ):
-                        f = samples[k] - segment
-                        widths[k] *= float(p.get("arrowFactor", 1.5)) * max(0.02, 1 - f)
-            group = group_lookup[i]
-            names = {state.atoms[j].name: j for j in group}
-            if "O" in names and "C" in names:
-                hints[k] = state.coords[names["O"]] - state.coords[names["C"]]
-        # Parallel transport handles missing peptide-plane directions.
-        result.append(
-            sweep(
-                xyz,
-                widths,
-                thickness,
-                hints,
-                c[owner],
-                owner,
-                "rectangle"
-                if all(state.atoms[i].ss == "S" for i in ids)
-                else "ellipse",
+        from .polymer_trace import trace_meshes
+
+        result.extend(
+            trace_meshes(
+                state,
+                ids,
+                group_lookup,
+                c,
+                r,
+                p,
+                linear,
                 radial,
+                putty=representation == "putty",
             )
         )
     if "polymer-gap" in visuals:

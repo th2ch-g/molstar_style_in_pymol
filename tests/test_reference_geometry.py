@@ -488,7 +488,12 @@ def test_ray_occlusion_preserves_flat_background():
     depth = np.full((60, 80), 0.2)
     depth[20:40, 20:60] = 0.1
     with patch("molstar_style_in_pymol.ray_effects.depth_samples", return_value=depth):
-        output = process(stream.getvalue(), [SimpleNamespace(profile=profile)], cmd)
+        output = process(
+            stream.getvalue(),
+            [SimpleNamespace(profile=profile, volumes=[])],
+            cmd,
+            ambient_occlusion=depth,
+        )
     image = np.asarray(Image.open(BytesIO(output)))
     background = np.all(pixels[:, :, :3] == 255, axis=2)
     np.testing.assert_array_equal(image[background], pixels[background])
