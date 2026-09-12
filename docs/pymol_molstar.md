@@ -1,0 +1,432 @@
+# Mol*-inspired PyMOL styles
+
+[Package README](../README.md) | [日本語](ja/pymol_molstar.md)
+
+`molstar_style_in_pymol` is a standalone Python package that adds molecular
+geometry, volumes, particles, annotations, and live GPU materials to PyMOL.
+It requires Python 3.10+, NumPy, SciPy, PyOpenGL, Pillow, Gemmi, msgpack,
+and scikit-image. Interactive rendering uses PyMOL 3.1 with Qt and a
+compatibility OpenGL 2.1 / GLSL 1.20 context. `pixi install` provides the
+development environment, including PyMOL. Node.js, Mol*, CueMol, mdtbx, and
+network services are not runtime dependencies. PyMOL's source and standard
+commands are unchanged.
+
+## Quick start
+
+Run `pixi install` in this repository, then start PyMOL with `pixi run pymol`.
+Alternatively, install into an existing PyMOL Python environment:
+
+```sh
+uv pip install --python <pymol-python> "git+https://github.com/th2ch-g/molstar_style_in_pymol.git"
+```
+
+Replace `<pymol-python>` with PyMOL's Python interpreter. Register the command
+from PyMOL's Python console or add these lines to `.pymolrc.py`:
+
+```python
+from molstar_style_in_pymol import __init_plugin__
+
+__init_plugin__()
+```
+
+Importing the package alone does not import or start PyMOL or change settings.
+The optional mdtbx `pymol_plugins` integration registers the command automatically.
+After loading a structure, run these commands in the PyMOL command line:
+
+```text
+molstar_style
+molstar_style cartoon, selection=chain A, color=secondary-structure
+molstar_style glossy, representation=ball-and-stick
+molstar_style molecular-surface, transparency=0.4
+molstar_style list
+molstar_style help
+```
+
+The default named view is `molstar`. Applying another style with the same name
+replaces that view. The default `polymer-and-ligand` preset combines polymer
+cartoon, ligand/ion sticks and spheres, water with partial opacity, and SNFG
+glycans. `protein-and-nucleic` isolates polymers.
+
+## Styles and controls
+
+Style names
+
+| Group | Names |
+| --- | --- |
+| Molecular geometry | `cartoon`, `backbone`, `ball-and-stick`, `blob-surface`, `carbohydrate`, `ellipsoid`, `gaussian-surface`, `gaussian-volume`, `label`, `line`, `molecular-surface`, `orientation`, `plane`, `point`, `putty`, `spacefill`, `polyhedron` |
+| Volumes | `direct-volume`, `dot`, `isosurface`, `segment`, `slice` |
+| Particles | `particle-spacefill`, `particle-orientation`, `particle-fibers`, `particle-target` |
+| Measurements and shapes | `distance`, `angle`, `dihedral`, `shape-label`, `shape-orientation`, `shape-plane`, `unitcell` |
+| Extensions | `interactions`, `cross-link-restraint`, `membrane-orientation`, `assembly-symmetry`, `confal-pyramids`, `ntc-tube`, `clashes`, `orbital`, `orbital-density`, `tunnel`, `mesh`, `kinemage`, `g3d`, `mvs`, `pairwise-metric`, `annotation-label`, `custom-label` |
+| Materials | `matte`, `plastic`, `glossy`, `metallic` |
+| Screen effects | `outline`, `occlusion`, `shadow`, `cel`, `xray`, `unlit`, `bloom`, `dof`, `illumination`, `background`, `antialias` |
+| Presets | `default`, `auto`, `empty`, `polymer-and-ligand`, `protein-and-nucleic`, `polymer-cartoon`, `atomic-detail`, `coarse-surface`, `illustrative`, `auto-lod`, `mesoscale`, `validation-geometry`, `validation-density`, `validation-rci`, `quality-plddt`, `quality-qmean`, `partial-charges` |
+
+`nucleic` is an alias for `cartoon`; `empty` removes the managed geometry.
+The [gallery](gallery.md) shows every drawable named style and its inputs.
+
+```text
+molstar_style [style], selection=all, representation=auto, color=auto, quality=medium, name=molstar
+```
+
+`representation` overrides geometry when applying a material or effect. `color=keep`
+uses the original PyMOL atom colors. `list` prints all style, color, and size names.
+`quality` accepts `lowest`, `lower`, `low`, `medium`, `high`, `higher`, `highest`,
+`auto`, and `custom`. Use `params` for custom resolution or tessellation.
+`transparency=0..1` multiplies each layer's opacity; `keep` retains preset opacity.
+
+`data` accepts a local file path or Python dictionary. `params` accepts a local
+JSON path or Python dictionary. PyMOL's comma parser is best used with JSON files;
+use Python calls for dictionaries. Inputs and referenced assets must be local.
+No command downloads structures, annotations, or assets. Missing required scientific
+annotations cause an error before replacing the current managed view.
+
+```python
+from molstar_style_in_pymol import molstar_style
+
+molstar_style('cartoon', 'chain A', params={
+    'tubularHelices': True, 'aspectRatio': 5,
+    'visuals': ['polymer-trace', 'polymer-gap', 'nucleotide-ring'],
+    'material': {'metalness': 0.2, 'roughness': 0.4, 'bumpiness': 0},
+    'postprocessing': {'occlusion': True, 'outline': True},
+})
+```
+
+### Representation parameters
+
+| Family | Parameters |
+| --- | --- |
+| Atoms | `sizeFactor`, `ignoreHydrogens`, `sizeAspectRatio`, `multipleBonds` (`off`, `symmetric`, `offset`), `aromaticBonds`, `visuals` |
+| Ellipsoids | Anisotropic atom tensors in square angstroms; default axes are `1.5958 * sqrt(abs(eigenvalue)) * sizeFactor`, matching the pinned Mol* source; explicit `probability` uses the exact 3D chi-square quantile |
+| Cartoon/backbone/putty | `sizeFactor`, `aspectRatio`, `arrowFactor`, `tubularHelices`, `roundCap`, `helixProfile`, `nucleicProfile` (`elliptical`, `rounded`, `square`), `linearSegments`, `radialSegments`, `bfactorScale`, `visuals` |
+| Surface | `resolution` in angstroms, `probeRadius`, `radiusOffset`, `smoothness`, `isoValue`, mesh/wireframe `visuals` |
+| Blob | `blobSize`, `method` (`grid`, `clustering`), `clusterIterations`, `shape` (`ellipsoid`, `spherical-harmonics`), `degree`, `regularization` |
+| Structure plane | Atom-colored cross section: `imageResolution`, `mode` (`frame`, `plane`), `axis` (`a`, `b`, `c`), `offset`, `plane` (`point`, `normal`), `rotation`, `frame`, `extent`, `margin`, `cutout`, `defaultColor` |
+| Volume isosurface/dot | `isoValue` (absolute number or `{"kind":"relative","relativeValue":1}`), `visuals`, `showWireframe`, `sizeFactor`; dots: `stride`, `maxPoints` |
+| Slice | `dimension` (`x`, `y`, `z`), `index` or `relativeIndex`, `colorList`, `domain` |
+| Direct volume | `transferFunction`: increasing `[value, color, opacity]` rows, or normalized `controlPoints`: `[fraction, opacity]`; `step` in angstroms |
+| Segments | Integer label grid, `segments` list, `smoothness`, `colorList` |
+| Labels | `level` (`chain`, `residue`, `element`), `sizeFactor`; custom labels: `text`, `textSize` |
+| Measurements | `linesSize`, `dashLength`, `textSize`, `label`, `arcScale` (fraction of the shorter arm), `sectorOpacity`, `visuals`; coincident arms and undefined dihedrals raise errors |
+| Clipping | `clipPlanes`: up to six `[nx,ny,nz,offset]` half-spaces; keeps `n dot position + offset >= 0` |
+
+See `reference.json` (package data) for every standard `visuals` name. Both
+unit and structure visual variants use the same independently generated mesh;
+inter-unit bonds use distinct object/chain/segment identities. A visual requiring
+absent geometry, such as polymer gaps in a continuous chain, can be empty.
+
+## Default colors
+
+`color=auto` chooses the color theme for each molecular representation.
+Atomic views use element colors with carbon inheriting the chain palette;
+polymer cartoons and molecular surfaces use chain colors.
+
+| Mode | Behavior |
+| --- | --- |
+| `auto` | Representation-specific molecular colors |
+| `keep` | Existing PyMOL atom colors |
+| `chain-id` | Chain palette with whole-object ordering |
+| `secondary-structure` | Helix, sheet, and coil colors |
+| `element-symbol` | Element palette; carbon defaults to chain colors |
+| `uniform` | One color from `colorParams.value` |
+
+```text
+molstar_style cartoon, color=keep
+molstar_style cartoon, color=chain-id
+molstar_style cartoon, color=secondary-structure
+```
+
+All 39 built-in color names and six size names are exposed, together with extension
+color names. Molecular themes use `colorParams`; size themes use `sizeTheme` and
+`sizeParams`. Intrinsic themes read atom identities, element, chain, secondary
+structure, occupancy, B-factor, charges, or van der Waals radii from PyMOL. The
+physical source coordinates and properties are never recolored or rewritten.
+`chain-id` preserves the whole source object's palette order when selecting a
+subset. For mmCIF, PyMOL's retained entity IDs (`custom`) and input order (`rank`)
+reproduce Mol*'s grouping by entity; PDB inputs cannot recover absent mmCIF metadata.
+
+Annotations use one of these explicit alignments:
+
+```json
+{"residues": [{"chain": "A", "resi": "10", "plddt": 94.5}]}
+```
+
+```json
+{"atom_data": {"entity_id": ["1", "1"], "partial_charge": [-0.3, 0.3]}}
+```
+
+`atom_data` arrays must match the selected atom order from `cmd.get_model`.
+Residue keys include optional `model` and `segi`; duplicate matches are rejected.
+Missing residue values use the missing-data color. Scalar extension fields are
+`plddt`, `qmean`, `geometry_quality`, `density_fit`, `random_coil_index`,
+`pdbe_structure_quality_report`, and `sb_ncbr_partial_charges`. Categorical fields
+use the color name with hyphens replaced by underscores. Entity/operator themes
+require actual entity/operator metadata. Local mmCIF/BCIF model-archive QA tables
+and entity-source tables are normalized automatically; additional validation
+formats can be converted to the residue schema above.
+
+`accessible-surface-area` calculates Shrake–Rupley area in square angstroms.
+`external-volume` samples a supplied local grid at atom coordinates.
+`external-structure` uses explicit `external_coordinates` and `external_colors`.
+Particle colors use particle entity/compartment/hierarchy/index/attribute fields;
+volume colors use value/instance/segment fields. Inapplicable themes fail explicitly.
+
+## Local input schemas
+
+Files: CCP4/MRC, Gaussian Cube, OpenDX, NumPy NPZ (`values`, `transform`),
+CIF/BCIF density-server grids, JSON, MVS JSON, binary G3D, and Kinemage text.
+PyMOL map objects can be passed as `selection`. Grid transforms map voxel indices
+to angstrom coordinates, including nonorthogonal cells and axis permutations.
+NPZ loading disables pickle. `data` dictionaries can contain a `Grid` directly.
+
+| Display | Required JSON fields |
+| --- | --- |
+| Measurements | `positions`: two/three/four XYZ rows; alternatively `indices` into selected atoms |
+| Custom/annotation labels | `positions`, `text`; selected atom center is the default position |
+| Mesh | `vertices`, integer triangle `faces`; optional `colors`, `color`, `opacity`, `transform`, `label`; multiple items via `meshes` |
+| Mesh BCIF | `mesh`, `mesh_vertex`, `mesh_triangle` tables |
+| Particles | `particles`: rows with `position`, `radius`, optional `quaternion` in XYZW order, `axes`, `scale`, `entity`, `compartment`, `hierarchy`, `color`, `label` |
+| Fibers | Particle rows also require `points`; `linearSegments` and `tubeSizeFactor` control the interpolated tube |
+| Particle targets | Particle `target` names an entry in `targets`; each target has `kind: shape/structure/volume` and local geometry, described below |
+| Cross-links | `cross_links`: rows with `indices: [i,j]`, `lower`, `upper`; colors report distance violations |
+| Annotated contacts/clashes | `interactions` / `clashes`: rows with `indices`, `type`, optional `positions`, `color` |
+| Membrane | `membrane`: `center`, `normal`, `thickness`, `radius` |
+| Assembly symmetry | `symmetry.axes`: `start`, `end`, `order`; optional `symmetry.cage.vertices` and `edges` |
+| DNATCO | `steps`: `class`, `score`, `positions`; confal order is O3-prime, P, OP1, OP2, O5-prime |
+| Tunnel | `positions`, positive `radii`; multiple tunnels via `tunnels` |
+| Orbital | Mol* `basis.atoms` with Bohr centers and shells (`exponents`, `angularMomentum`, `coefficients`); `orbitals` with `alpha`, `occupancy`, `energy` |
+| Pairwise metric/PAE | Square `predicted_aligned_error` or `matrix`, optional title and maximum; sparse nested `values` is also accepted |
+| Unit cell | `cell: [a,b,c,alpha,beta,gamma]`, optional origin; can read PyMOL symmetry |
+
+`interactions` without annotations computes geometric hydrogen bonds, optional weak
+hydrogen bonds, hydrophobic/ionic/halogen/metal contacts, pi stacking, and cation–pi
+contacts. Explicit hydrogens constrain donor angles. These are geometric estimates,
+not a protonation or energy calculation. `clashes` requires annotations unless
+`params={"compute": true}` explicitly requests van der Waals overlap estimates.
+Membrane, symmetry, DNATCO, and validation displays consume supplied results;
+they do not infer those scientific annotations from geometry.
+
+Orbital evaluation follows Mol* real solid harmonics L=0..4 and its `gaussian`,
+`cca`, and `cca-reverse` coefficient orders. Density sums occupied squared orbitals.
+A precomputed Cube grid also works. The default orbital isovalue is 15% of the
+largest absolute field value, not Mol*'s cumulative-probability threshold.
+Kinemage handles vectors, ribbons, triangles,
+balls, spheres, dots, labels, and words. G3D reads local compressed resolution
+blocks, with haplotype, chromosome, and region filters.
+
+Particle `scale` contains three dimensionless positive factors, multiplied by
+`radius * sizeFactor` for spacefill. Orientation shows axes of `axisLength=10` Å,
+independent of radius. Targets instance geometry, not arrows toward XYZ endpoints:
+
+```json
+{"targets": {"unit": {"kind": "shape", "vertices": [[-1,-1,0],[1,-1,0],[0,1,0]], "faces": [[0,1,2]]}},
+ "particles": [{"target": "unit", "position": [5,0,0], "radius": 2, "quaternion": [0,0,0,1]}]}
+```
+
+Shape targets use the mesh schema; structure targets take atom `positions` and
+`radii` with `type: spacefill/blob-surface`; volume targets take a local `grid`
+with `type: isosurface/dot`. A target may provide `center`; otherwise the bounding
+box midpoint is used. Instances rotate about that center, then translate to the
+particle position. `scaleByRadius` defaults to true for shapes and false for other
+kinds; `targetColor=source` preserves target colors. This local schema does not
+include Mol* target data services, streaming, or dynamic level-of-detail selection.
+
+MVS supports local structure trees (`root/download/parse/structure/component/`
+`representation/color/opacity/transform/label`) and selecting a snapshot from
+multiple-state documents. URLs must be local paths. Complex annotation selectors
+must first be normalized to the explicit local annotation/mesh schemas above;
+unsupported nodes fail instead of silently being omitted. MVS is a visualization
+input, not a browser, server, animation editor, or full Mol* application replacement.
+
+PAE opens a Qt panel; clicking a cell selects its two residues when matrix rows
+match the selected residues. PNG/ray operations export a matrix image when the
+managed view consists only of a panel. Headless matrix export is supported.
+
+```text
+molstar_style isosurface, selection=density
+molstar_style direct-volume, data=density.mrc
+molstar_style segment, data=segments.npz
+molstar_style interactions, selection=protein or ligand, name=contacts
+```
+
+The map `density` or input files must already exist. The interaction example
+uses pre-existing `protein` and `ligand` selections.
+
+ASCII labels use the bundled vector font. Unicode labels use the Qt font system
+when a GUI is present; headless Unicode rendering requires `params.font` pointing
+to a local TTF/OTF font containing the requested glyphs. Text is tessellated once
+and is shared by GPU and ray output.
+
+## Selection and state management
+
+`selection` accepts a PyMOL molecular selection or a loaded map object.
+`state=0` prepares all loaded states; a positive state number creates one fixed
+view. Use distinct `name` values to keep several managed views.
+
+```text
+molstar_style refresh
+molstar_style refresh, name=all
+molstar_style reset
+molstar_style reset, name=all
+```
+
+Omitting `name` targets only the default `molstar` view; `name=all` updates or
+resets every view. Use `molstar_style refresh, name=contacts` or
+`molstar_style reset, name=contacts` to target a specific named view.
+
+Names can overlap on the same atoms; reset restores an atom's original representation
+when the final owner is removed. Reapplying a name prepares and loads the replacement
+before releasing the previous view. Failed preparation/loading preserves the old view.
+Deleting a managed group or its generated object triggers cleanup through the Qt
+maintenance timer or the next command. Sessions store restoration records; reloading
+rebuilds CPU/GPU geometry, and missing local files leave native sources restored.
+Use `refresh` after modifying source coordinates, topology, colors, or annotations.
+
+All source states are prepared outside OpenGL callbacks. `cache_mb=2048` bounds
+geometry plus native float CGO payloads; allocator/Python overhead and source snapshots
+are additional. `gpu_cache_mb=256` bounds VBO and volume-texture caches; framebuffers
+are additional viewport-dependent allocations. The command reports preparation time
+and geometry size. The reproducible benchmark reports native payload, GPU cache, and
+peak process RSS; its coordinates are repeated protein backbones with synthetic motion,
+not an MD simulation. GPU, platform, selection, and quality affect playback speed.
+
+## Image export
+
+```text
+ray 1600, 1200
+png figure_ray.png
+molstar_style png, filename=figure.png, width=1600, height=1200
+molstar_style ray, filename=figure_ray.png, width=1600, height=1200
+```
+
+The dedicated `png` operation exports the GPU view in the Qt GUI.
+Standard and dedicated ray export also work in headless PyMOL.
+
+Opaque and transparent geometry use GLSL/VBOs, with sorted transparent triangles.
+Volumes use actual scalar-field ray marching in OpenGL. Standard
+PyMOL `ray` and `png, ray=1` include retained meshes and three pre-integrated density projections;
+these standard commands are not patched. Default PyMOL transparency mode 2
+does not accumulate overlapping transparent surfaces, so the retained projections
+provide a coarse preview without changing global settings. Use `molstar_style ray` for camera-aligned
+density sampling, explicit mesh outlines, background compositing, and image effects.
+For managed scenes with opaque meshes, dedicated density export integrates each
+pixel directly and clips the integral against the native mesh depth. Scenes with
+unmanaged objects or transparent meshes retain the sampled native-plane fallback.
+Dedicated ray evaluates the same material at mesh vertices for the current camera.
+For scenes containing only managed geometry it temporarily neutralizes PyMOL's
+additional lighting, then restores all settings. Visible unmanaged geometry keeps
+the user's native lighting, which also changes managed colors in that mixed ray
+scene. Standard PyMOL `ray` uses the retained vertex colors and native lighting;
+refresh after changing the camera if using that preview. Dedicated ray omits
+fragment-derivative roughness and bump perturbations. Antialiasing, vertex lighting
+and transparency sampling retain small image differences; see [measured results](fidelity.md).
+
+## Representation audit
+
+The package independently implements the visualization families in Mol*
+revision `5b1b54ed03b03936041f514b33b8bb129b774d37`, including extension geometry.
+The [geometry audit](audit.md) records corrections and per-family differences;
+the [coverage table](coverage.md) states the supported local schemas and limits.
+The [actual Mol* comparison](fidelity.md) uses matching inputs and cameras.
+
+| Mol* reference (8GNG) | PyMOL GPU | PyMOL dedicated ray |
+| --- | --- | --- |
+| ![Molstar 8GNG](gallery/reference-molstar-8gng-color-gpu.png) | ![PyMOL GPU 8GNG](gallery/reference-pymol-8gng-color-gpu.png) | ![PyMOL ray 8GNG](gallery/reference-pymol-8gng-color-ray.png) |
+
+Ellipsoids require actual anisotropic tensors. Atoms without a tensor are omitted;
+an entirely tensor-free selection raises an error. Equal eigenvalues give a sphere
+of the tensor-derived radius, never a van der Waals fallback. The default multiplier
+`1.5958` is copied literally from Mol*; it is not the exact 50% probability quantile.
+Ellipsoid bonds default to uniform size 1 and `sizeAspectRatio=0.1` (radius 0.1 Å).
+
+Backbone defaults to radius 0.3 Å; cartoon uses 0.2 Å before ribbon aspect scaling.
+Cartoon follows Mol*'s residue-local Catmull–Rom curves, peptide direction frames,
+sheet smoothing, sharp rectangular beta sheets and tapered arrows. Helices default
+to elliptical sections; nucleic backbones use O3' trace atoms and square sections.
+`tubularHelices` uses helixorient centers; `roundCap` rounds their terminal sections.
+The [reference comparison](fidelity.md) checks actual upstream curves and images.
+Putty uses `0.2 * (0.2 + 0.1 * B)` Å by default. Explicit `sizeTheme`/`sizeParams`
+also affect polymer widths. `bfactorScale` retains the earlier square-root formula
+only as an explicit compatibility option. Structure orientation defaults to an
+ellipsoid; shape orientation defaults to an oriented box. Their `sizeFactor` and
+`scaleFactor`, respectively, scale the extent around the fitted box center.
+
+Line and point sizes use world-space approximations: bond radius is
+`0.02 * sizeFactor * size`, point radius is `0.075 * sizeFactor * size` Å.
+Line defaults to `sizeFactor=2`; point defaults to 1. Attenuation booleans do not
+change these radii. Line crosses default to lone atoms with total arm length 0.35 Å.
+Screen-pixel size, camera-dependent attenuation, and every upstream bond filter
+are not implemented. Multiple bonds use the reference radius/spacing defaults,
+with an independently selected neighboring atom defining the offset plane.
+
+Volume dots default to radius 1 Å and select values below a negative isovalue.
+Uniform volume slices modulate the chosen color by normalized scalar intensity;
+`isoValue` masks lower values. The local slice interface uses grid-aligned `x/y/z`
+planes (default `x`, middle index), without Mol* periodic mapping or oblique slices.
+Gaussian volumes retain molecular theme colors in both GPU and dedicated ray output.
+
+## Material and outline audit
+
+Material coefficients follow the pinned Mol* source. A custom `material`
+dictionary accepts `metalness`, `roughness`, and `bumpiness` in `[0,1]`.
+
+| Material | Metalness | Roughness | Bumpiness |
+| --- | ---: | ---: | ---: |
+| `matte` | 0.0 | 1.0 | 0.0 |
+| `plastic` | 0.0 | 0.2 | 0.0 |
+| `glossy` | 0.0 | 0.6 | 0.0 |
+| `metallic` | 1.0 | 0.6 | 0.0 |
+
+Effects: `occlusion`, `outline`, `shadow`, `cel`, `xray`, `unlit`, `bloom`,
+`dof`, `illumination`, `antialias`.
+`postprocessing` values can be booleans or dictionaries with `strength`/`intensity`.
+`focus` is normalized depth for depth-of-field effects. Default occlusion is scoped
+to the managed layer. Its 32 seeded hemisphere samples, view-space depth normals,
+radius, bias and bilateral blur follow Mol* SSAO in both GPU and dedicated ray.
+`postprocessing.occlusion` accepts `radius` (log2 Å, default 5), `bias` (0.8),
+`blurKernelSize` (15) and `blurDepthBias` (0.5 Å). The sample count is fixed at 32;
+multiscale and transparent-object SSAO are not implemented. Layers containing direct
+volumes skip surface SSAO because accumulated density has no unique surface depth.
+Illumination remains a screen-space approximation, not Mol*'s progressive path tracer.
+
+Opaque and transparent meshes use Mol*'s GGX/Schlick/Smith material model with
+dielectric reflectance 0.04 and its diffuse/specular/metal ambient terms. Default
+lighting is a white camera-relative light at inclination 150°, azimuth 320°,
+intensity 0.6, plus white ambient intensity 0.4. `params.lighting` accepts `light`
+(up to eight dictionaries with `inclination`, `azimuth`, `color`, `intensity`),
+`ambientColor`, `ambientIntensity` and `exposure`. `flatShaded` and Mol* noise-based
+`bumpFrequency` / `bumpAmplitude` work in GPU; frequency defaults to zero.
+
+`background` accepts Mol*'s `variant` dictionary with `horizontalGradient`,
+`radialGradient`, `image`, or `skybox`. Images and six cube faces must be local.
+Rotation, blur, saturation, and lightness are prepared outside drawing callbacks.
+The existing background remains unchanged unless a background is explicitly requested.
+
+## Validation
+
+```sh
+pixi install --locked
+pixi run test
+pixi run check
+uv run --no-project --python .pixi/envs/default/bin/python python \
+    tests/check_real.py --gui --output .cache/validation
+uv run --no-project --python .pixi/envs/default/bin/python python \
+    tests/check_real.py --gui --visuals --output .cache/validation-visuals
+uv run --no-project --python .pixi/envs/default/bin/python python \
+    tests/check_real.py --gui --benchmark --structure local_protein.cif --output .cache/benchmark
+uv build --python .pixi/envs/default/bin/python
+```
+
+The harness records GPU/ray images and checks local inputs and source restoration.
+`--visuals` checks the standard subvisuals separately. `--benchmark` uses a local
+protein CIF/PDB to build a 500-residue, 100-state synthetic workload; supply it
+with `--structure`. GUI checks create a separate PyMOL process and never reuse
+a live user session.
+
+See the [comparison report](fidelity.md) and
+[reproduction instructions](../tests/reference/README.md) for matched Mol* and
+PyMOL geometry, materials, and camera checks. Reference tools are used only for
+validation. The [gallery](gallery.md#regenerate) has its own regeneration command.
+Temporary renders and machine-specific benchmark reports belong in `.cache/`.
+Published gallery and reference-comparison PNGs are tracked in `docs/gallery/`
+and rendered locally, without CI. Third-party attribution is in [NOTICE](../NOTICE).

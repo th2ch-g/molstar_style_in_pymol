@@ -1,6 +1,6 @@
 # Geometry audit
 
-[English guide](guide.md) · [日本語](ja/guide.md) · [Gallery](gallery.md) · [Coverage](coverage.md)
+[Package README](../README.md) | [Documentation](README.md) | [English guide](pymol_molstar.md) | [日本語](ja/pymol_molstar.md)
 
 Reference: Mol* revision `5b1b54ed03b03936041f514b33b8bb129b774d37`.
 This review compares the local implementation with that source, then checks

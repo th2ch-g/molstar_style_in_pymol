@@ -1,5 +1,7 @@
 # Coverage and approximation contract
 
+[Package README](../README.md) | [Documentation](README.md) | [English guide](pymol_molstar.md) | [日本語](ja/pymol_molstar.md)
+
 Reference: Mol* `5b1b54ed03b03936041f514b33b8bb129b774d37`.
 See the [geometry audit](audit.md) and [actual Mol* comparison](fidelity.md) for
 corrected formulas, measured images and remaining limitations.

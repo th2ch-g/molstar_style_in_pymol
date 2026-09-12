@@ -53,7 +53,7 @@ def molstar_style(
         Node.js, Mol*, and CueMol are not runtime dependencies. Native ray uses
         the same meshes; direct volumes use sampled density planes for ray.
         Refresh after editing source coordinates, colors, or annotations.
-        Reset restores source representations. See docs/guide.md for schemas
+        Reset restores source representations. See docs/pymol_molstar.md for schemas
         and the per-feature approximation and validation details.
     """
     if _self is None:

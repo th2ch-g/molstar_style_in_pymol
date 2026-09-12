@@ -3,7 +3,7 @@
 - Reply in concise Japanese; write code comments and commit messages in English.
 - Run Python through uv with the pixi interpreter.
 - Keep runtime independent of Node.js, Mol*, CueMol, and network services.
-- Read docs/guide.md before changing the command interface or renderer.
+- Read docs/pymol_molstar.md before changing the command interface or renderer.
 - Preserve source atoms and unrelated views; never patch PyMOL commands.
 - Validate real GPU and ray output in a separate PyMOL process.
 - Keep caches, environments, downloaded inputs, and temporary renders ignored.

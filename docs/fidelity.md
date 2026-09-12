@@ -1,6 +1,6 @@
 # Comparison with actual Mol* rendering
 
-[日本語](ja/fidelity.md) · [Guide](guide.md) · [Gallery](gallery.md) · [Remaining differences](coverage.md)
+[Package README](../README.md) | [日本語](ja/fidelity.md) | [Guide](pymol_molstar.md) | [Documentation](README.md)
 
 The renderer now follows Mol*'s residue-local ribbon construction, GGX material,
 camera-relative lighting, chain palette order and 32-sample ambient occlusion.

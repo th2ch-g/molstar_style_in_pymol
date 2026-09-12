@@ -1,6 +1,6 @@
 # 実際の Mol* との描画比較
 
-[English](../fidelity.md) · [ガイド](guide.md) · [全ギャラリー](../gallery.md) · [残る差分](../coverage.md)
+[Package README](../../README.md) | [English](../fidelity.md) | [ガイド](pymol_molstar.md) | [ドキュメント一覧](../README.md)
 
 リボンの残基ごとの曲線・断面、GGX 材質、光源、鎖の配色順、32サンプルの環境遮蔽を
 Mol* の実装に合わせました。参照は Mol* の固定コミット

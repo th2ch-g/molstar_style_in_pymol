@@ -1,6 +1,6 @@
 # Visualization gallery
 
-[README](../README.md#gallery) · [English guide](guide.md) · [日本語ガイド](ja/guide.md) · [Coverage and differences](coverage.md)
+[Package README](../README.md#gallery) | [Documentation](README.md) | [English guide](pymol_molstar.md) | [日本語](ja/pymol_molstar.md)
 
 See the [actual Mol* comparison](fidelity.md) ([日本語](ja/fidelity.md)) for
 matched-camera 8GNG, material and DNA images with measured geometry and pixel errors.
@@ -19,19 +19,20 @@ The ellipsoid example uses heavy atoms with a synthetic positive-definite tensor
 in square angstroms. Volume dots use `sizeFactor=0.12` to separate neighboring dots;
 the command default is 1. Other examples use the style defaults.
 The pairwise metric is a 2D panel exported by both operations, not a ray-traced
-3D object. GPU and ray differences are described in the coverage document.
+3D object. GPU and ray differences are described in the [coverage table](coverage.md).
 
 Examples that require annotations or grids use the local dictionaries in the
 [rendering script](../tests/render_gallery.py) and [fixtures](../tests/samples.py).
 Their style names alone are not sufficient to reproduce those inputs; see the
-guide for `data` schemas. Protein examples use the same orientation and framing.
+[guide](pymol_molstar.md#local-input-schemas) for `data` schemas.
+Protein examples use the same orientation and framing.
 
 Published GPU and ray PNGs are versioned in `docs/gallery/` and referenced
 with relative paths, so the gallery is available directly from the checkout
 and on GitHub. Images are rendered locally; no CI or release service is required.
 The validation manifest stays in the ignored `.cache/gallery/` directory.
 
-[Structure](#structure) · [Volume](#volume) · [Particles](#particles) · [Measurements and shapes](#measurements-and-shapes) · [Extensions](#extensions) · [Materials](#materials) · [Effects](#effects) · [Presets](#presets)
+[Structure](#structure) | [Volume](#volume) | [Particles](#particles) | [Measurements and shapes](#measurements-and-shapes) | [Extensions](#extensions) | [Materials](#materials) | [Effects](#effects) | [Presets](#presets)
 
 ## Structure
 

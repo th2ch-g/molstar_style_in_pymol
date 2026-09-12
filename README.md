@@ -1,30 +1,43 @@
 # molstar_style_in_pymol
 
-An independent Python implementation of Mol*-inspired visualization for PyMOL 3.1.
-It provides a single `molstar_style` command, local scientific inputs, interactive
-OpenGL drawing, and native ray interoperability. Node.js, Mol*, CueMol, and network
-services are not runtime dependencies.
+Standalone `molstar_style` command for PyMOL: Mol*-inspired molecular geometry,
+volumes, particles, annotations, materials, interactive GPU rendering, picking,
+state playback, and standard or dedicated ray export. PyMOL's source and standard
+commands are unchanged. Node.js, Mol*, CueMol, and network services are not
+runtime dependencies.
 
-[English guide](docs/guide.md) · [日本語ガイド](docs/ja/guide.md) · [Mol* comparison](docs/fidelity.md) · [Coverage and differences](docs/coverage.md) · [Geometry audit](docs/audit.md) · [Gallery](docs/gallery.md)
+## Install
 
-Ribbon curves, cross sections, GGX materials, lighting and ambient occlusion follow
-the pinned Mol* source. The [matched-camera comparison](docs/fidelity.md) runs actual
-Mol* and PyMOL on 8GNG, 1CRN and DNA, with numerical geometry and image metrics.
+Use the reproducible environment in this repository:
 
-| Mol* reference (8GNG) | PyMOL GPU | PyMOL dedicated ray |
-| --- | --- | --- |
-| ![Molstar 8GNG](docs/gallery/reference-molstar-8gng-color-gpu.png) | ![PyMOL GPU 8GNG](docs/gallery/reference-pymol-8gng-color-gpu.png) | ![PyMOL ray 8GNG](docs/gallery/reference-pymol-8gng-color-ray.png) |
-
-```text
-molstar_style
-molstar_style cartoon, color=secondary-structure
-molstar_style glossy, representation=ball-and-stick
-molstar_style isosurface, selection=density
-molstar_style direct-volume, data=density.mrc
-molstar_style interactions, selection=protein or ligand, name=contacts
-molstar_style ray, filename=figure.png, width=1600, height=1200
-molstar_style reset, name=all
+```sh
+pixi install
+pixi run pymol
 ```
+
+To install into an existing Python environment that already provides PyMOL 3.1:
+
+```sh
+uv pip install --python <pymol-python> "git+https://github.com/th2ch-g/molstar_style_in_pymol.git"
+```
+
+Replace `<pymol-python>` with the Python interpreter used by PyMOL.
+The Python package requires Python 3.10+, NumPy, SciPy, PyOpenGL, Pillow,
+Gemmi, msgpack, and scikit-image. Interactive rendering additionally requires
+PyMOL 3.1 with Qt and a compatibility OpenGL 2.1 / GLSL 1.20 context.
+PyMOL is supplied by conda/pixi, not by pip. Headless PyMOL supports ray export.
+
+Register the command from PyMOL's Python console or add this to `.pymolrc.py`:
+
+```python
+from molstar_style_in_pymol import __init_plugin__
+
+__init_plugin__()
+```
+
+Importing the package alone does not import or start PyMOL, apply a style, or
+change PyMOL settings. mdtbx's `pymol_plugins` integration registers the command
+automatically.
 
 ## Gallery
 
@@ -246,29 +259,76 @@ The published PNGs are versioned for README display. Downloaded coordinates,
 render manifests, and temporary validation output stay in the ignored `.cache`
 directory.
 
-## Install
+## Use
 
-Install into the Python environment used by PyMOL:
+After loading a structure, run these commands in the PyMOL command line:
+
+```text
+molstar_style
+molstar_style cartoon, color=secondary-structure
+molstar_style glossy, representation=ball-and-stick
+molstar_style molecular-surface, transparency=0.4
+ray 1600, 1200
+png figure_ray.png
+molstar_style png, filename=figure.png, width=1600, height=1200
+molstar_style ray, filename=figure_ray.png, width=1600, height=1200
+molstar_style refresh
+molstar_style reset
+molstar_style list
+```
+
+The default `polymer-and-ligand` view combines polymer cartoons, ligand and ion
+sticks and spheres, partially transparent water, and SNFG glycans.
+`representation` overrides the geometry of material or effect styles.
+The existing background is preserved unless one is explicitly requested.
+`color=keep` uses existing atom colors.
+
+Standard `ray` and `png, ray=1` use retained native meshes and coarse density
+projections. The dedicated `ray` operation adds camera-aligned density sampling,
+outlines, background compositing, and image effects. Managed opaque meshes clip
+density integration; mixed unmanaged or transparent mesh scenes use a sampled
+native-plane fallback. Dedicated ray temporarily neutralizes PyMOL lighting for
+scenes containing only managed geometry, then restores the settings.
+
+Maps, grids, and scientific annotations use local inputs:
+
+```text
+molstar_style isosurface, selection=density
+molstar_style direct-volume, data=density.mrc
+molstar_style interactions, selection=protein or ligand, name=contacts
+molstar_style reset, name=all
+```
+
+The map `density` or file `density.mrc` must already exist; the interaction
+example uses pre-existing `protein` and `ligand` selections. Commands do not
+download inputs. Missing required annotations fail before replacing the view.
+
+See the [full guide](docs/pymol_molstar.md) for styles, states, selection,
+local input schemas, session restoration, memory limits, and rendering differences.
+The [Japanese guide](docs/ja/pymol_molstar.md) covers the same interface.
+The [documentation index](docs/README.md) links the gallery and comparison reports.
+
+## Develop and validate
 
 ```sh
-uv pip install --python <pymol-python> git+https://github.com/th2ch-g/molstar_style_in_pymol.git
+pixi run test
+pixi run check
+uv run --no-project --python .pixi/envs/default/bin/python python \
+    tests/check_real.py --gui --benchmark --structure local_protein.cif --output .cache/validation
 ```
 
-Register in PyMOL's Python interpreter or startup file:
+The standalone harness opens a separate PyMOL process and checks real GPU/ray
+images, local inputs, and source restoration. Use `--visuals` to check standard
+subvisuals. The optional benchmark uses 500 residues and 100 synthetic states.
+Provide a local protein CIF/PDB with `--structure` for the benchmark.
+Temporary images, environments, build products, and caches are ignored.
 
-```python
-from molstar_style_in_pymol import __init_plugin__
-__init_plugin__()
-```
-
-The `mdtbx` `pymol_plugins` package performs this registration automatically.
-Importing this package alone does not import or start PyMOL.
-
-For development, install [pixi](https://pixi.sh) and uv, then run `pixi install`
-and `pixi run test`. The pinned development interpreter is Python 3.10 with
-PyMOL 3.1. Interactive rendering requires compatibility OpenGL 2.1 / GLSL 1.20;
-headless PyMOL supports ray export. Published gallery PNGs are versioned;
-temporary renders and caches are ignored.
+Ribbon curves, cross sections, GGX materials, lighting, and ambient occlusion
+follow the pinned Mol* source. The [appearance comparison](docs/fidelity.md)
+runs actual Mol* and PyMOL on 8GNG, 1CRN, and DNA with matched cameras,
+numerical geometry checks, and image metrics. The
+[geometry audit](docs/audit.md) and [coverage table](docs/coverage.md) describe
+remaining differences.
 
 The reference revision is Mol* `5b1b54ed03b03936041f514b33b8bb129b774d37`.
 See [NOTICE](NOTICE) for attribution and the independent renderer's scope.
